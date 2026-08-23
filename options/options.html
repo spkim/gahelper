@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Setup Copilot — 옵션</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main id="options-root">
+      <header class="options-header">
+        <span class="options-eyebrow">SETUP COPILOT</span>
+        <h1 class="options-title">공급자 설정</h1>
+        <p class="options-lede">
+          API 키는 이 브라우저에만 저장되며 암호화되지 않습니다. 다른 기기와 동기화되지 않습니다.
+        </p>
+      </header>
+
+      <section class="providers-section">
+        <div class="section-header">
+          <h2 class="section-title">등록된 공급자</h2>
+          <button id="btn-show-add" class="btn-primary" type="button">공급자 추가</button>
+        </div>
+        <p id="providers-empty" class="empty-state" hidden>
+          아직 공급자가 없습니다. 오른쪽 위 버튼으로 추가하세요.
+        </p>
+        <ul id="providers-list" class="providers-list" role="list"></ul>
+      </section>
+
+      <section id="form-section" class="form-section" hidden>
+        <h2 class="section-title" id="form-title">공급자 추가</h2>
+        <form id="provider-form" class="provider-form" autocomplete="off">
+          <label class="field">
+            <span class="field-label">이름</span>
+            <input type="text" name="label" required placeholder="예: 개인 클로드 계정" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">공급자 종류</span>
+            <select name="kind" required>
+              <option value="anthropic">Anthropic</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="compatible">OpenAI 호환</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field-label">모델</span>
+            <input type="text" name="model" required spellcheck="false" />
+            <span class="field-hint">
+              모델명은 시간이 지나면 바뀝니다. 각 공급자 문서에서 현재 모델명을 확인하세요.
+            </span>
+          </label>
+
+          <label class="field" id="field-baseurl" hidden>
+            <span class="field-label">Base URL</span>
+            <input type="url" name="baseUrl" placeholder="https://api.example.com/v1" spellcheck="false" />
+          </label>
+
+          <div class="field">
+            <span class="field-label">API 키</span>
+            <div class="key-input">
+              <input
+                type="password"
+                name="apiKey"
+                required
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button type="button" id="btn-toggle-visibility" class="btn-ghost">보기</button>
+            </div>
+            <span class="field-hint">키는 평문으로 로컬 저장됩니다.</span>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">저장</button>
+            <button type="button" id="btn-cancel" class="btn-ghost">취소</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

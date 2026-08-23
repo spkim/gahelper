@@ -1,0 +1,20 @@
+{
+  "name": "setup-copilot-api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed-from-packs.js"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "pg": "^8.13.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

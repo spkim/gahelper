@@ -1,0 +1,58 @@
+{
+  "id": "tistory",
+  "label": "티스토리",
+  "draft": true,
+  "matches": ["*://*.tistory.com/*", "*://tistory.com/*"],
+  "origins": ["*://*.tistory.com/*"],
+  "entry": {
+    "url": "https://www.tistory.com/",
+    "label": "티스토리 열기",
+    "note": "블로그를 선택한 뒤 관리 화면으로 이동합니다.",
+    "ready": { "by": "urlIncludes", "text": "/manage" }
+  },
+  "goals": [
+    {
+      "id": "category_open",
+      "label": "카테고리 화면 열기",
+      "procedures": ["nav_category"]
+    },
+    {
+      "id": "notify_open",
+      "label": "알림 설정 열기",
+      "procedures": ["nav_notify"]
+    }
+  ],
+  "procedures": {
+    "nav_category": {
+      "label": "카테고리 화면으로 이동",
+      "why": "글 발행 전에 분류 체계를 준비합니다.",
+      "probes": {
+        "categoryLink": { "by": "linkText", "text": "카테고리" }
+      },
+      "steps": [
+        {
+          "id": "click_category",
+          "instruct": "좌측 메뉴에서 '카테고리'를 클릭합니다.",
+          "locate": "categoryLink",
+          "verify": { "is": "urlIncludes", "text": "/category" },
+          "onFail": "좌측 메뉴의 '콘텐츠' 그룹이 접혀 있으면 펼친 뒤 '카테고리'를 찾으세요."
+        }
+      ]
+    },
+    "nav_notify": {
+      "label": "알림 화면으로 이동",
+      "probes": {
+        "notifyLink": { "by": "linkText", "text": "알림" }
+      },
+      "steps": [
+        {
+          "id": "click_notify",
+          "instruct": "좌측 메뉴에서 '알림' 항목을 클릭합니다.",
+          "locate": "notifyLink",
+          "verify": { "is": "urlIncludes", "text": "/notify" },
+          "onFail": "관리 홈 좌측의 '환경설정' 그룹을 펼치면 '알림' 메뉴가 있습니다."
+        }
+      ]
+    }
+  }
+}

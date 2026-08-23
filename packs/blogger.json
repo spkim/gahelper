@@ -1,0 +1,57 @@
+{
+  "id": "blogger",
+  "label": "Blogger",
+  "draft": true,
+  "matches": ["*://www.blogger.com/*", "*://blogger.com/*"],
+  "origins": ["*://*.blogger.com/*"],
+  "entry": {
+    "url": "https://www.blogger.com/",
+    "label": "Blogger 열기",
+    "note": "블로그 선택 후 설정 화면으로 이동합니다.",
+    "ready": { "by": "urlIncludes", "text": "/blog/settings/" }
+  },
+  "goals": [
+    {
+      "id": "settings_open",
+      "label": "블로그 설정 열기",
+      "procedures": ["nav_settings"]
+    },
+    {
+      "id": "comment_open",
+      "label": "댓글 설정 열기",
+      "procedures": ["nav_settings", "scroll_comments"]
+    }
+  ],
+  "procedures": {
+    "nav_settings": {
+      "label": "설정 화면 열기",
+      "probes": {
+        "settingsLink": { "by": "linkText", "text": "설정" }
+      },
+      "steps": [
+        {
+          "id": "click_settings",
+          "instruct": "좌측 메뉴에서 '설정'을 클릭합니다.",
+          "locate": "settingsLink",
+          "verify": { "is": "urlIncludes", "text": "/settings" },
+          "onFail": "좌측 사이드바 하단에 '설정' 항목이 있습니다."
+        }
+      ]
+    },
+    "scroll_comments": {
+      "label": "댓글 섹션으로 이동",
+      "probes": {
+        "commentSection": { "by": "textPresent", "text": "댓글" }
+      },
+      "steps": [
+        {
+          "id": "find_comments",
+          "instruct": "설정 페이지에서 '댓글' 섹션까지 스크롤합니다.",
+          "locate": "commentSection",
+          "verify": { "probe": "commentSection", "is": "found" },
+          "onFail": "페이지 상단 우측의 목차에서 '댓글' 항목을 클릭해도 됩니다."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Setup Copilot",
+  "version": "0.1.0",
+  "description": "설정 화면을 읽고, 한 번에 한 단계씩 안내하는 대화형 셋업 도우미.",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "sidePanel", "scripting", "tabs"],
+  "host_permissions": [
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "optional_host_permissions": ["*://*/*"],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/panel.html"
+  },
+  "options_page": "options/options.html",
+  "action": {
+    "default_title": "Setup Copilot 열기"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}

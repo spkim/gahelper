@@ -1,0 +1,27 @@
+# secrets
+.env
+.env.local
+*.pem
+*.key
+
+# node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# build / cache
+dist/
+build/
+.cache/
+.parcel-cache/
+coverage/
+
+# editor / os
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# postgres data (if bind-mounted)
+pgdata/

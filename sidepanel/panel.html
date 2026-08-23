@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Setup Copilot</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <main id="panel-root">
+      <header class="panel-header">
+        <span class="panel-eyebrow">SETUP COPILOT</span>
+        <h1 class="panel-title">설정 도우미</h1>
+      </header>
+
+      <div id="draft-banner" class="draft-banner" hidden>
+        이 사이트 팩은 검증 전입니다. 라벨이 맞지 않으면 수동 안내로 넘어갑니다.
+      </div>
+
+      <section id="state-slot" class="state-slot" aria-live="polite"></section>
+    </main>
+
+    <template id="tpl-no-provider">
+      <div class="card">
+        <p class="card-lede">
+          시작하려면 AI 공급자를 하나 등록해야 합니다. 등록된 키는 이 브라우저에만 저장됩니다.
+        </p>
+        <div class="card-actions">
+          <button type="button" class="btn-primary" data-action="open-options">공급자 설정 열기</button>
+        </div>
+      </div>
+    </template>
+
+    <template id="tpl-no-pack">
+      <div class="card">
+        <p class="card-lede">이 페이지에서는 도울 수 있는 설정이 없습니다. 지원 사이트로 이동해 보세요.</p>
+        <ul class="site-list" data-slot="sites"></ul>
+      </div>
+    </template>
+
+    <template id="tpl-ready">
+      <div class="card">
+        <p class="card-lede" data-slot="lede">설정 도우미입니다. 어떤 설정을 도와드릴까요?</p>
+        <form class="prompt-form" data-slot="form">
+          <input
+            type="text"
+            class="prompt-input"
+            data-slot="input"
+            placeholder="예: 카테고리 관리 열어줘"
+            autocomplete="off"
+            maxlength="200"
+          />
+          <button type="submit" class="btn-primary" data-slot="submit">보내기</button>
+        </form>
+        <div class="goal-chips" data-slot="chips"></div>
+      </div>
+    </template>
+
+    <template id="tpl-entry">
+      <div class="card">
+        <p class="card-lede">먼저 설정 화면으로 이동해야 합니다.</p>
+        <p class="card-note mono" data-slot="note"></p>
+        <div class="card-actions">
+          <button type="button" class="btn-primary" data-action="go-entry"></button>
+        </div>
+      </div>
+    </template>
+
+    <template id="tpl-running">
+      <div class="run-layout">
+        <ol class="step-rail" data-slot="rail"></ol>
+        <div class="run-main">
+          <div class="proc-head">
+            <span class="proc-index" data-slot="proc-index"></span>
+            <h3 class="proc-title" data-slot="proc-title"></h3>
+          </div>
+          <div class="step-card">
+            <p class="step-instruct" data-slot="instruct"></p>
+            <p class="step-hint" data-slot="hint" hidden></p>
+            <div class="step-actions">
+              <button type="button" class="btn-ghost" data-action="locate" data-slot="locate-btn">위치 보기</button>
+              <button type="button" class="btn-ghost" data-action="fail">안 돼요</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template id="tpl-blocked">
+      <div class="run-layout">
+        <ol class="step-rail" data-slot="rail"></ol>
+        <div class="run-main">
+          <div class="proc-head">
+            <span class="proc-index" data-slot="proc-index"></span>
+            <h3 class="proc-title" data-slot="proc-title"></h3>
+          </div>
+          <div class="step-card blocked">
+            <p class="step-instruct" data-slot="instruct"></p>
+            <p class="step-recover" data-slot="recover">
+              이 단계에서 두 번 막혔습니다. 수동으로 진행하거나 처음부터 다시 시작하세요.
+            </p>
+            <div class="step-actions">
+              <button type="button" class="btn-ghost" data-action="manual">수동으로 진행</button>
+              <button type="button" class="btn-ghost" data-action="restart">처음부터</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template id="tpl-done">
+      <div class="card">
+        <p class="card-lede">모든 절차를 완료했습니다.</p>
+        <ul class="done-list" data-slot="completed"></ul>
+        <div class="card-actions">
+          <button type="button" class="btn-primary" data-action="restart">다른 설정 하기</button>
+        </div>
+      </div>
+    </template>
+
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

@@ -1,0 +1,57 @@
+{
+  "id": "youtube",
+  "label": "YouTube Studio",
+  "draft": true,
+  "matches": ["*://studio.youtube.com/*"],
+  "origins": ["*://studio.youtube.com/*"],
+  "entry": {
+    "url": "https://studio.youtube.com/",
+    "label": "YouTube Studio 열기",
+    "note": "채널로 자동 리다이렉트됩니다.",
+    "ready": { "by": "urlIncludes", "text": "/channel/" }
+  },
+  "goals": [
+    {
+      "id": "settings_open",
+      "label": "채널 설정 열기",
+      "procedures": ["nav_settings"]
+    },
+    {
+      "id": "upload_defaults",
+      "label": "업로드 기본값 열기",
+      "procedures": ["nav_settings", "nav_upload_defaults"]
+    }
+  ],
+  "procedures": {
+    "nav_settings": {
+      "label": "설정 화면 열기",
+      "probes": {
+        "settingsLink": { "by": "linkText", "text": "설정" }
+      },
+      "steps": [
+        {
+          "id": "click_settings",
+          "instruct": "좌측 메뉴 하단의 '설정'을 클릭합니다.",
+          "locate": "settingsLink",
+          "verify": { "is": "urlIncludes", "text": "settings" },
+          "onFail": "좌측 사이드바에서 톱니바퀴 아이콘 옆의 '설정' 항목을 찾으세요."
+        }
+      ]
+    },
+    "nav_upload_defaults": {
+      "label": "업로드 기본값 탭 열기",
+      "probes": {
+        "uploadTab": { "by": "buttonText", "text": "업로드 기본값" }
+      },
+      "steps": [
+        {
+          "id": "click_upload_tab",
+          "instruct": "'업로드 기본값' 탭을 클릭합니다.",
+          "locate": "uploadTab",
+          "verify": { "probe": "uploadTab", "is": "found" },
+          "onFail": "설정 창 좌측 탭 목록에서 '업로드 기본값'을 찾으세요."
+        }
+      ]
+    }
+  }
+}
