@@ -72,12 +72,10 @@ CREATE TABLE IF NOT EXISTS procedures (
   supersedes             TEXT REFERENCES procedures(procedure_id),
   created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   -- 스펙 5번째 원칙: verify 없는 step 저장 금지
+  -- CHECK 안에서는 서브쿼리 불가 → jsonpath 로 "verify 없는 원소가 없음" 검사
   CONSTRAINT steps_all_have_verify CHECK (
     jsonb_typeof(steps) = 'array'
-    AND NOT EXISTS (
-      SELECT 1 FROM jsonb_array_elements(steps) s
-      WHERE s->'verify' IS NULL
-    )
+    AND NOT jsonb_path_exists(steps, '$[*] ? (!exists(@.verify))')
   )
 );
 CREATE INDEX IF NOT EXISTS idx_procedures_goal ON procedures(goal_id);
