@@ -1,0 +1,16 @@
+{
+  "id": "search-console-setup",
+  "version": 1,
+  "name": "Google Search Console 설정",
+  "description": "Search Console에 속성을 추가하고 소유권을 확인한다.",
+  "type": "setup",
+  "match": {
+    "hosts": ["search.google.com"],
+    "urlIncludes": ["/search-console/"]
+  },
+  "goals": [
+    { "id": "add-property",      "label": "속성 추가" },
+    { "id": "verify-ownership",  "label": "소유권 확인" },
+    { "id": "check-coverage",    "label": "색인 생성 상태 확인", "optional": true }
+  ]
+}

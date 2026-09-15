@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Setup Copilot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "설정 화면을 읽고, 한 번에 한 단계씩 안내하는 대화형 셋업 도우미.",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "sidePanel", "scripting", "tabs"],

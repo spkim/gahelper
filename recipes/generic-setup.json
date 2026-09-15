@@ -1,0 +1,8 @@
+{
+  "id": "generic-setup",
+  "version": 1,
+  "name": "일반 설정 안내",
+  "description": "사전 등록되지 않은 모든 사이트의 설정을 현재 화면 관측으로 안내한다. fallback Recipe.",
+  "type": "setup",
+  "goals": []
+}

@@ -1,115 +1,119 @@
 import { getSettings, getActiveProvider, onSettingsChanged } from "../lib/storage.js";
-import { loadPacks, findPackForUrl, urlMatchesPack, findGoal, getProcedure } from "../lib/catalog.js";
+import { route, REFUSE_MESSAGE } from "../lib/router.js";
 import {
-  getSession,
-  clearSession,
-  startSession,
-  currentProcedure,
-  currentStep,
-  tickStep,
-  skipAlreadyPassed,
-  checkEntryReady,
-  reportFail,
-  restartSession,
-  setEntryStatus,
-  setRunningStatus,
+  getSession, clearSession, createSession,
+  currentStep, tickStep, skipAlreadyPassed,
+  reportFail, resumeFromBlocked, checkShouldReinterpret, resetForReinterpret,
 } from "../lib/engine.js";
 import {
-  getActiveTab,
-  isProbeableUrl,
-  hasOriginPermission,
-  requestOriginPermission,
-  injectProbe,
-  probe,
-  highlight,
+  getActiveTab, hasOriginPermission, requestOriginPermission,
+  injectProbe, probe, highlight, signature as captureSignature,
 } from "../lib/probe-client.js";
-import { classify, REFUSE_MESSAGE, CHOOSE_MESSAGE } from "../lib/router.js";
+import { structuralHash } from "../lib/signature.js";
+import { resolve } from "../lib/procedure-generator.js";
 import { explain as recoverExplain, FALLBACK_MESSAGE } from "../lib/recover.js";
+import { resolveRecipe } from "../lib/recipe-resolver.js";
+import { getRecipe, listRecipes } from "../lib/recipe-store.js";
+import {
+  createRecipeSession, getRecipeSession, clearRecipeSession,
+  currentGoal, markGoalDone,
+} from "../lib/recipe-engine.js";
 
-const els = {
-  root: document.getElementById("state-slot"),
-  banner: document.getElementById("draft-banner"),
-  templates: {
-    "no-provider": document.getElementById("tpl-no-provider"),
-    "no-pack": document.getElementById("tpl-no-pack"),
-    "ready": document.getElementById("tpl-ready"),
-    "entry": document.getElementById("tpl-entry"),
-    "running": document.getElementById("tpl-running"),
-    "blocked": document.getElementById("tpl-blocked"),
-    "done": document.getElementById("tpl-done"),
-  },
-};
+// ─── 상수 / 전역 ─────────────────────────────────────────────────────────────
 
 const POLL_MS = 1000;
 
+const els = {
+  root: document.getElementById("state-slot"),
+  templates: {
+    "no-provider":  document.getElementById("tpl-no-provider"),
+    "recipe-select": document.getElementById("tpl-recipe-select"),
+    "resolving":    document.getElementById("tpl-resolving"),
+    "entry":        document.getElementById("tpl-entry"),
+    "running":      document.getElementById("tpl-running"),
+    "blocked":      document.getElementById("tpl-blocked"),
+    "done":         document.getElementById("tpl-done"),
+    "recipe-done":  document.getElementById("tpl-recipe-done"),
+    "refuse":       document.getElementById("tpl-refuse"),
+  },
+};
+
 let settings = null;
-let packs = [];
 let currentTab = null;
-let currentPack = null;
 let renderedKey = null;
 let pollTimer = null;
 let ticking = false;
-let readyMode = { kind: "default" };
-let routerBusy = false;
 
-function computeStateKind() {
+// session 없는 상태에서의 UI 모드.
+let uiMode = "prompt"; // "prompt" | "resolving" | "refuse"
+
+// ─── 상태 계산 ───────────────────────────────────────────────────────────────
+
+function computeKind() {
   if (!settings) return "loading";
   if (!settings.activeProviderId) return "no-provider";
-  if (!currentTab || !isProbeableUrl(currentTab.url)) return "no-pack";
-  if (!currentPack) return "no-pack";
-  const session = getSession(currentTab.id);
-  if (!session) return "ready";
-  if (!urlMatchesPack(currentPack, currentTab.url)) return "entry";
-  if (session.status === "done") return "done";
-  if (session.status === "blocked") return "blocked";
-  if (session.status === "entry") return "entry";
-  return "running";
-}
-
-function cloneTemplate(kind) {
-  const tpl = els.templates[kind];
-  return tpl.content.firstElementChild.cloneNode(true);
+  const session = currentTab ? getSession(currentTab.id) : null;
+  const recipeSession = currentTab ? getRecipeSession(currentTab.id) : null;
+  if (session) {
+    if (session.status === "done") {
+      // recipe 가 아직 진행 중이면 다음 goal 로 전환하는 동안 resolving 표시.
+      if (recipeSession?.status === "running") return "resolving";
+      return "done";
+    }
+    if (session.status === "blocked") return "blocked";
+    if (session.status === "entry")   return "entry";
+    return "running";
+  }
+  if (recipeSession?.status === "done") return "recipe-done";
+  if (uiMode === "resolving") return "resolving";
+  if (uiMode === "refuse")    return "refuse";
+  return "recipe-select";
 }
 
 function renderKey(kind) {
   const session = currentTab ? getSession(currentTab.id) : null;
+  const recipeSession = currentTab ? getRecipeSession(currentTab.id) : null;
   return JSON.stringify({
     kind,
     tab: currentTab?.id ?? null,
-    url: currentTab?.url ?? null,
-    packId: currentPack?.id ?? null,
-    goalId: session?.goalId ?? null,
-    procIdx: session?.procIdx ?? null,
     stepIdx: session?.stepIdx ?? null,
     attempts: session?.attempts ?? null,
     status: session?.status ?? null,
+    confirmations: session?.procedure?.confirmations ?? null,
+    origin: session?.procedure?.origin ?? null,
     recoverText: session?.recoverText ?? null,
-    activeProviderId: settings?.activeProviderId ?? null,
-    readyMode: readyMode.kind,
-    readyIds: readyMode.kind === "choose" ? readyMode.ids.join(",") : null,
-    routerBusy,
+    recipeId: recipeSession?.recipeId ?? null,
+    recipeStatus: recipeSession?.status ?? null,
+    goalIdx: recipeSession?.goalIdx ?? null,
+    uiMode,
   });
 }
 
+// ─── 렌더 ────────────────────────────────────────────────────────────────────
+
+function cloneTemplate(kind) {
+  return els.templates[kind].content.firstElementChild.cloneNode(true);
+}
+
 function render(force = false) {
-  const kind = computeStateKind();
+  const kind = computeKind();
   const key = renderKey(kind);
   if (!force && key === renderedKey) return;
   renderedKey = key;
 
-  els.banner.hidden = !(currentPack?.draft && kind !== "no-pack" && kind !== "no-provider");
   els.root.innerHTML = "";
   if (kind === "loading") return;
 
   const node = cloneTemplate(kind);
-  if (kind === "no-provider") renderNoProvider(node);
-  else if (kind === "no-pack") renderNoPack(node);
-  else if (kind === "ready") renderReady(node);
-  else if (kind === "entry") renderEntry(node);
-  else if (kind === "running") renderRunning(node);
-  else if (kind === "blocked") renderBlocked(node);
-  else if (kind === "done") renderDone(node);
-
+  if      (kind === "no-provider")  renderNoProvider(node);
+  else if (kind === "recipe-select") renderRecipeSelect(node);
+  else if (kind === "resolving")    { /* spinner only */ }
+  else if (kind === "entry")        renderEntry(node);
+  else if (kind === "running")      renderRunning(node);
+  else if (kind === "blocked")      renderBlocked(node);
+  else if (kind === "done")         renderDone(node);
+  else if (kind === "recipe-done")  renderRecipeDone(node);
+  else if (kind === "refuse")       renderRefuse(node);
   els.root.appendChild(node);
 }
 
@@ -119,301 +123,510 @@ function renderNoProvider(node) {
   });
 }
 
-function renderNoPack(node) {
-  const list = node.querySelector('[data-slot="sites"]');
-  for (const pack of packs) {
-    const li = document.createElement("li");
-    li.className = "site-item";
-    li.innerHTML = `
-      <span>
-        <span class="site-label"></span>
-        ${pack.draft ? '<span class="site-draft">draft</span>' : ""}
-      </span>
-      <button type="button" class="btn-ghost">열기</button>
-    `;
-    li.querySelector(".site-label").textContent = pack.label;
-    li.querySelector("button").addEventListener("click", async () => {
-      await openEntryUrl(pack);
-    });
-    list.appendChild(li);
+function renderRecipeSelect(node) {
+  const tabId = currentTab?.id ?? null;
+  const recipeSession = tabId ? getRecipeSession(tabId) : null;
+
+  // URL 기반 추천
+  const urlRecDiv = node.querySelector('[data-slot="url-rec"]');
+  if (currentTab?.url) {
+    try {
+      const resolved = resolveRecipe({ url: currentTab.url });
+      if (resolved.source === "url") {
+        const recipe = getRecipe(resolved.recipeId);
+        if (recipe) {
+          urlRecDiv.hidden = false;
+          node.querySelector('[data-slot="rec-name"]').textContent = recipe.name;
+          node.querySelector('[data-action="start-rec"]').addEventListener("click", () => {
+            startRecipeFlow(resolved.recipeId);
+          });
+        }
+      }
+    } catch {}
   }
-}
 
-function renderReady(node) {
-  const lede = node.querySelector('[data-slot="lede"]');
-  if (readyMode.kind === "refuse") lede.textContent = REFUSE_MESSAGE;
-  else if (readyMode.kind === "choose") lede.textContent = CHOOSE_MESSAGE;
+  // 이어하기
+  if (recipeSession?.status === "running") {
+    const resumeSection = node.querySelector('[data-slot="resume-section"]');
+    resumeSection.hidden = false;
+    const recipe = getRecipe(recipeSession.recipeId);
+    node.querySelector('[data-slot="resume-name"]').textContent =
+      recipe?.name ?? recipeSession.recipeId;
+    node.querySelector('[data-action="resume-rec"]').addEventListener("click", () => {
+      const goal = currentGoal(tabId);
+      if (goal) startFlow(goal.label);
+    });
+  }
 
+  // Recipe 칩
+  const chips = node.querySelector('[data-slot="chips"]');
+  for (const recipe of listRecipes()) {
+    if (recipe.id === "generic-setup") continue;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "recipe-chip btn-ghost btn-sm";
+    btn.textContent = recipe.name;
+    btn.addEventListener("click", () => startRecipeFlow(recipe.id));
+    chips.appendChild(btn);
+  }
+
+  // 자연어 입력
   const form = node.querySelector('[data-slot="form"]');
   const input = node.querySelector('[data-slot="input"]');
-  const submit = node.querySelector('[data-slot="submit"]');
-  if (routerBusy) {
-    input.disabled = true;
-    submit.disabled = true;
-    submit.textContent = "확인 중…";
-  }
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if (!text) return;
-    handleRouteSubmit(text);
+    if (text) handleRouteSubmit(text);
   });
-
-  const chips = node.querySelector('[data-slot="chips"]');
-  const goals = readyMode.kind === "choose"
-    ? readyMode.ids.map((id) => currentPack.goals.find((g) => g.id === id)).filter(Boolean)
-    : currentPack.goals;
-  for (const goal of goals) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "chip";
-    btn.textContent = goal.label;
-    btn.addEventListener("click", () => handleChipClick(goal.id));
-    chips.appendChild(btn);
-  }
+  setTimeout(() => input?.focus?.(), 0);
 }
 
 function renderEntry(node) {
+  const session = currentTab ? getSession(currentTab.id) : null;
+  const goalText = session?.goalText ?? "설정 화면";
+  node.querySelector('[data-slot="lede"]').textContent =
+    `'${goalText}' 을(를) 위한 설정 화면을 열어 주세요. 화면이 준비되면 자동으로 진행합니다.`;
   node.querySelector('[data-slot="note"]').textContent =
-    currentPack.entry.note ?? currentPack.entry.url;
-  const btn = node.querySelector('[data-action="go-entry"]');
-  btn.textContent = currentPack.entry.label;
-  btn.addEventListener("click", () => openEntryUrl(currentPack));
+    "설정 메뉴나 해당 서비스를 직접 열고 이 패널로 돌아오세요.";
+  const goBtn = node.querySelector('[data-action="go-entry"]');
+  goBtn.textContent = "현재 화면으로 진행";
+  goBtn.addEventListener("click", () => tryResolveCurrentTab());
+  node.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+    const tabId = currentTab?.id;
+    if (tabId) { clearSession(tabId); clearRecipeSession(tabId); }
+    uiMode = "prompt";
+    render(true);
+  });
 }
 
-function renderRail(container, proc, session) {
+function renderRail(container, steps, stepIdx) {
   container.innerHTML = "";
-  const total = proc.steps.length;
-  for (let i = 0; i < total; i++) {
-    const node = document.createElement("li");
-    node.className = "rail-node";
-    node.dataset.state = i < session.stepIdx ? "pass" : i === session.stepIdx ? "current" : "pending";
-    container.appendChild(node);
-    if (i < total - 1) {
-      const c = document.createElement("li");
-      c.className = "rail-connector";
-      c.dataset.state = i < session.stepIdx ? "pass" : "pending";
-      container.appendChild(c);
+  for (let i = 0; i < steps.length; i++) {
+    const li = document.createElement("li");
+    li.className = "rail-node";
+    li.dataset.state = i < stepIdx ? "pass" : i === stepIdx ? "current" : "pending";
+    container.appendChild(li);
+    if (i < steps.length - 1) {
+      const conn = document.createElement("li");
+      conn.className = "rail-connector";
+      conn.dataset.state = i < stepIdx ? "pass" : "pending";
+      container.appendChild(conn);
     }
   }
 }
 
-function renderRunning(node) {
-  const session = getSession(currentTab.id);
-  const { proc, goal } = currentProcedure(currentPack, session);
-  const step = currentStep(currentPack, session);
-  if (!proc || !step) return;
+function renderTrustBadge(node, procedure) {
+  const badge = node.querySelector('[data-slot="trust-badge"]');
+  if (!badge) return;
+  const c = procedure?.confirmations ?? 0;
+  const origin = procedure?.origin ?? "live";
+  if (origin === "live" && c === 0) {
+    badge.hidden = false;
+    badge.dataset.level = "live";
+    badge.textContent = "화면을 읽어 만든 안내";
+  } else if (c >= 3) {
+    badge.hidden = false;
+    badge.dataset.level = "confirmed";
+    badge.textContent = "여러 번 확인된 안내";
+  }
+}
 
-  renderRail(node.querySelector('[data-slot="rail"]'), proc, session);
+function renderRunning(node) {
+  const tabId = currentTab.id;
+  const session = getSession(tabId);
+  const { procedure, stepIdx } = session;
+  const step = currentStep(session);
+  if (!procedure || !step) return;
+
+  // Recipe 진행 표시
+  const recipeSession = getRecipeSession(tabId);
+  const progressEl = node.querySelector('[data-slot="goal-progress"]');
+  if (progressEl && recipeSession?.status === "running") {
+    const recipe = getRecipe(recipeSession.recipeId);
+    const total = recipe?.goals?.length ?? 0;
+    const done = recipeSession.completedGoalIds?.length ?? 0;
+    progressEl.hidden = false;
+    const textEl = progressEl.querySelector('[data-slot="goal-progress-text"]');
+    if (textEl) textEl.textContent = `${recipe?.name ?? ""} — ${done + 1} / ${total}`;
+  }
+
+  renderRail(node.querySelector('[data-slot="rail"]'), procedure.steps, stepIdx);
   node.querySelector('[data-slot="proc-index"]').textContent =
-    `${session.procIdx + 1} / ${goal.procedures.length}`;
-  node.querySelector('[data-slot="proc-title"]').textContent = proc.label;
+    `${stepIdx + 1} / ${procedure.steps.length}`;
+  node.querySelector('[data-slot="proc-title"]').textContent = procedure.goalLabel ?? "";
   node.querySelector('[data-slot="instruct"]').textContent = step.instruct;
+  renderTrustBadge(node, procedure);
 
   const locateBtn = node.querySelector('[data-slot="locate-btn"]');
-  if (!step.locate) locateBtn.disabled = true;
-  locateBtn.addEventListener("click", () => handleLocate(step, proc));
+  if (!step.target) { locateBtn.disabled = true; }
+  else locateBtn.addEventListener("click", () => handleLocate(step));
 
-  const failBtn = node.querySelector('[data-action="fail"]');
-  failBtn.addEventListener("click", handleFail);
+  node.querySelector('[data-action="fail"]').addEventListener("click", handleFail);
+  node.querySelector('[data-action="reinterpret"]').addEventListener("click", () => handleReinterpret());
 
   if (session.attempts >= 1) {
     const hint = node.querySelector('[data-slot="hint"]');
     hint.hidden = false;
-    hint.textContent = step.onFail;
+    hint.textContent = step.onFail ?? "";
   }
 }
 
 function renderBlocked(node) {
-  const session = getSession(currentTab.id);
-  const { proc, goal } = currentProcedure(currentPack, session);
-  const step = currentStep(currentPack, session);
-  if (!proc || !step) return;
-
-  renderRail(node.querySelector('[data-slot="rail"]'), proc, session);
-  node.querySelector('[data-slot="proc-index"]').textContent =
-    `${session.procIdx + 1} / ${goal.procedures.length}`;
-  node.querySelector('[data-slot="proc-title"]').textContent = proc.label;
-  node.querySelector('[data-slot="instruct"]').textContent = step.instruct;
+  const tabId = currentTab.id;
+  const session = getSession(tabId);
+  const { procedure, stepIdx } = session;
+  const step = currentStep(session);
 
   const recoverEl = node.querySelector('[data-slot="recover"]');
-  if (session.recoverText) recoverEl.textContent = session.recoverText;
+  recoverEl.textContent = session.recoverText
+    ?? "이 단계에서 두 번 막혔습니다. 수동으로 진행하거나 처음부터 다시 시작하세요.";
 
-  node.querySelector('[data-action="manual"]').addEventListener("click", () => {
-    const s = getSession(currentTab.id);
-    if (!s) return;
-    s.status = "running";
-    s.attempts = 0;
-    s.recoverText = null;
-    render(true);
-    ensurePolling();
-  });
+  const manualBtn = node.querySelector('[data-action="manual"]');
+
+  if (!procedure || !step) {
+    node.querySelector('[data-slot="rail"]')?.parentElement?.classList?.add('hidden');
+    node.querySelector('[data-slot="proc-index"]').textContent = "";
+    node.querySelector('[data-slot="proc-title"]').textContent = "";
+    node.querySelector('[data-slot="instruct"]').textContent = "";
+    manualBtn.style.display = "none";
+  } else {
+    renderRail(node.querySelector('[data-slot="rail"]'), procedure.steps, stepIdx);
+    node.querySelector('[data-slot="proc-index"]').textContent =
+      `${stepIdx + 1} / ${procedure.steps.length}`;
+    node.querySelector('[data-slot="proc-title"]').textContent = procedure.goalLabel ?? "";
+    node.querySelector('[data-slot="instruct"]').textContent = step.instruct;
+    manualBtn.addEventListener("click", () => {
+      const s = getSession(tabId);
+      if (!s) return;
+      resumeFromBlocked(s);
+      s.stepIdx += 1;
+      if (s.stepIdx >= (s.procedure?.steps?.length ?? 0)) s.status = "done";
+      else s.status = "running";
+      s.recoverText = null;
+      render(true);
+      ensurePolling();
+    });
+  }
+
   node.querySelector('[data-action="restart"]').addEventListener("click", () => {
-    const s = getSession(currentTab.id);
-    if (!s) return;
-    restartSession(s);
-    s.recoverText = null;
+    if (tabId) { clearSession(tabId); clearRecipeSession(tabId); }
+    uiMode = "prompt";
     render(true);
-    ensurePolling();
   });
 }
 
 function renderDone(node) {
-  const session = getSession(currentTab.id);
-  const goal = findGoal(currentPack, session.goalId);
-  const list = node.querySelector('[data-slot="completed"]');
-  for (const procId of goal.procedures) {
-    const proc = getProcedure(currentPack, procId);
-    if (!proc) continue;
-    const li = document.createElement("li");
-    li.textContent = proc.label;
-    list.appendChild(li);
-  }
+  const tabId = currentTab?.id;
+  const session = tabId ? getSession(tabId) : null;
+  node.querySelector('[data-slot="goal-label"]').textContent =
+    session?.procedure?.goalLabel ?? "";
   node.querySelector('[data-action="restart"]').addEventListener("click", () => {
-    clearSession(currentTab.id);
-    readyMode = { kind: "default" };
+    if (tabId) { clearSession(tabId); clearRecipeSession(tabId); }
+    uiMode = "prompt";
     render(true);
   });
 }
 
-async function openEntryUrl(pack) {
-  if (!currentTab?.id) return;
-  const granted = await ensureOriginGranted(pack.entry.url);
-  if (!granted) return;
-  await chrome.tabs.update(currentTab.id, { url: pack.entry.url });
+function renderRecipeDone(node) {
+  const tabId = currentTab?.id;
+  const recipeSession = tabId ? getRecipeSession(tabId) : null;
+  const recipe = recipeSession ? getRecipe(recipeSession.recipeId) : null;
+  node.querySelector('[data-slot="goal-label"]').textContent = recipe?.name ?? "";
+  node.querySelector('[data-action="restart"]').addEventListener("click", () => {
+    if (tabId) { clearSession(tabId); clearRecipeSession(tabId); }
+    uiMode = "prompt";
+    render(true);
+  });
 }
+
+function renderRefuse(node) {
+  node.querySelector('[data-slot="lede"]').textContent = REFUSE_MESSAGE;
+  node.querySelector('[data-action="retry"]').addEventListener("click", () => {
+    uiMode = "prompt";
+    render(true);
+  });
+}
+
+// ─── Recipe 플로우 ────────────────────────────────────────────────────────────
+
+async function startRecipeFlow(recipeId) {
+  const tabId = currentTab?.id;
+  if (!tabId) return;
+
+  // generic-setup 은 RecipeSession 없이 자연어 입력 경로 사용.
+  if (recipeId === "generic-setup") return;
+
+  clearRecipeSession(tabId);
+  createRecipeSession(tabId, recipeId);
+  const goal = currentGoal(tabId);
+  if (!goal) return;
+
+  await startFlow(goal.label);
+}
+
+// guidance session 이 done 상태가 됐을 때 recipe 진행을 조율한다.
+async function handleGuidanceDone() {
+  const tabId = currentTab?.id;
+  if (!tabId) return;
+
+  const recipeSession = getRecipeSession(tabId);
+  if (!recipeSession || recipeSession.status !== "running") {
+    render(true);
+    return;
+  }
+
+  const result = markGoalDone(tabId);
+  clearSession(tabId);
+
+  if (result.status === "done") {
+    render(true); // recipe-done
+    return;
+  }
+
+  uiMode = "resolving";
+  render(true);
+  await startFlow(result.nextGoal.label);
+}
+
+// ─── 플로우 ──────────────────────────────────────────────────────────────────
 
 async function ensureOriginGranted(url) {
   if (await hasOriginPermission(url)) return true;
   return requestOriginPermission(url);
 }
 
-async function handleChipClick(goalId) {
-  if (!currentTab?.url || !currentPack) return;
-  const granted = await ensureOriginGranted(currentTab.url);
-  if (!granted) return;
+async function resolveProcedure(session, provider, goalText) {
+  let sigRes;
   try {
-    await injectProbe(currentTab.id);
-  } catch (e) {
-    console.warn("[setup-copilot] probe 주입 실패", e);
+    sigRes = await captureSignature(session.tabId);
+  } catch (err) {
+    console.warn("[setup-copilot] captureSignature 실패", err?.message);
+    session.status = "blocked";
+    session.recoverText = "화면 구조를 읽지 못했습니다. 페이지가 완전히 로드됐는지 확인하세요.";
+    return false;
   }
-  const session = startSession(currentTab.id, currentPack, goalId);
-  const entryOk = await checkEntryReady(currentPack, currentTab.id).catch(() => false);
-  if (!entryOk) {
-    setEntryStatus(session);
-  } else {
-    try {
-      await skipAlreadyPassed(currentPack, session);
-    } catch (e) {
-      console.warn("[setup-copilot] 초기 스킵 실패", e);
-    }
+  console.info("[setup-copilot] signature", sigRes?.signature?.length ?? 0, "nodes | url:", sigRes?.url?.slice(0, 60));
+
+  const sig = sigRes?.signature ?? [];
+  const hash = await structuralHash(sig).catch(() => null);
+  session.signature = sig;
+  session.structuralHash = hash;
+
+  let resolveResult;
+  try {
+    resolveResult = await resolve(provider, goalText, sig);
+  } catch (err) {
+    console.warn("[setup-copilot] resolve 실패", err?.message, err?.reasons);
+    session.status = "blocked";
+    session.recoverText = `안내를 만들지 못했습니다: ${err?.message ?? "알 수 없는 오류"}. 잠시 후 다시 시도하거나 수동으로 진행하세요.`;
+    return false;
   }
+
+  if (resolveResult.empty) {
+    session.status = "blocked";
+    session.recoverText = "이 화면에서 관련 항목을 찾지 못했습니다. 설정 메뉴의 다른 화면일 수 있습니다.";
+    return false;
+  }
+
+  session.procedure = resolveResult.procedure;
+  session.stepIdx = 0;
+  session.attempts = 0;
+  session.status = "running";
+  return true;
+}
+
+async function handleRouteSubmit(userText) {
+  if (uiMode === "resolving") return;
+  const provider = getActiveProvider(settings);
+  if (!provider) { uiMode = "refuse"; render(true); return; }
+
+  const url = currentTab?.url ?? "";
+  const probeable = url.startsWith("http://") || url.startsWith("https://");
+  let permGranted = !probeable;
+  if (probeable) {
+    permGranted = await ensureOriginGranted(url);
+  }
+
+  uiMode = "resolving";
+  render(true);
+
+  let routeResult;
+  try {
+    routeResult = await route(provider, userText);
+  } catch {
+    routeResult = { kind: "refuse" };
+  }
+
+  if (routeResult.kind === "refuse") {
+    uiMode = "refuse";
+    render(true);
+    return;
+  }
+
+  const { goalText } = routeResult;
+  await startFlow(goalText, { permGranted, url });
+}
+
+async function startFlow(goalText, hint = {}) {
+  if (!currentTab?.id) {
+    uiMode = "prompt";
+    render(true);
+    return;
+  }
+  const provider = getActiveProvider(settings);
+  if (!provider) { uiMode = "refuse"; render(true); return; }
+
+  const url = hint.url ?? currentTab.url ?? "";
+  const probeable = url.startsWith("http://") || url.startsWith("https://");
+
+  if (!probeable) {
+    const session = createSession(currentTab.id);
+    session.goalText = goalText;
+    session.status = "entry";
+    uiMode = "prompt";
+    render(true);
+    ensurePolling();
+    return;
+  }
+
+  const granted = hint.permGranted ?? (await ensureOriginGranted(url));
+  if (!granted) {
+    const session = createSession(currentTab.id);
+    session.goalText = goalText;
+    session.status = "entry";
+    uiMode = "prompt";
+    render(true);
+    ensurePolling();
+    return;
+  }
+
+  await injectProbe(currentTab.id).catch(() => {});
+
+  const session = createSession(currentTab.id);
+  session.goalText = goalText;
+
+  const ok = await resolveProcedure(session, provider, goalText);
+  if (ok) await skipAlreadyPassed(session).catch(() => {});
+
+  uiMode = "prompt";
   render(true);
   ensurePolling();
 }
 
-async function handleLocate(step, proc) {
-  if (!step.locate) return;
-  const locator = proc.probes?.[step.locate];
-  if (!locator) return;
-  try {
-    await highlight(currentTab.id, locator);
-  } catch (e) {
-    console.warn("[setup-copilot] 하이라이트 실패", e);
+async function tryResolveCurrentTab() {
+  const session = currentTab ? getSession(currentTab.id) : null;
+  if (!session || session.status !== "entry") return;
+  const provider = getActiveProvider(settings);
+  if (!provider) return;
+
+  const url = currentTab.url ?? "";
+  const probeable = url.startsWith("http://") || url.startsWith("https://");
+  if (!probeable) return;
+
+  const granted = await hasOriginPermission(url);
+  if (!granted) {
+    const ok = await requestOriginPermission(url);
+    if (!ok) return;
   }
+  await injectProbe(currentTab.id).catch(() => {});
+
+  const goalText = session.goalText ?? "";
+  const ok = await resolveProcedure(session, provider, goalText);
+  if (ok) await skipAlreadyPassed(session).catch(() => {});
+  render(true);
+  ensurePolling();
+}
+
+async function handleLocate(step) {
+  if (!step.target || !currentTab?.id) return;
+  try { await highlight(currentTab.id, step.target); } catch {}
 }
 
 async function handleFail() {
-  const session = getSession(currentTab.id);
+  const session = currentTab ? getSession(currentTab.id) : null;
   if (!session) return;
-  const before = session.status;
+  const wasRunning = session.status === "running";
   reportFail(session);
   render(true);
-  if (before !== "blocked" && session.status === "blocked") {
+  if (wasRunning && session.status === "blocked") {
     await runRecover(session);
   }
 }
 
-async function fetchObserved(session) {
-  const { proc } = currentProcedure(currentPack, session);
-  const probes = proc?.probes ?? {};
-  if (!Object.keys(probes).length) return {};
-  try {
-    const result = await probe(session.tabId, probes);
-    return result?.found ?? {};
-  } catch {
-    return {};
-  }
+async function handleReinterpret() {
+  const session = currentTab ? getSession(currentTab.id) : null;
+  if (!session) return;
+  const provider = getActiveProvider(settings);
+  if (!provider) return;
+  const goalText = session.goalText ?? "";
+  uiMode = "resolving";
+  render(true);
+  const sig = (await captureSignature(currentTab.id).catch(() => null))?.signature ?? [];
+  const hash = await structuralHash(sig).catch(() => null);
+  resetForReinterpret(session, sig, hash);
+  const ok = await resolveProcedure(session, provider, goalText);
+  if (ok) await skipAlreadyPassed(session).catch(() => {});
+  uiMode = "prompt";
+  render(true);
+  ensurePolling();
 }
 
 async function runRecover(session) {
   const provider = getActiveProvider(settings);
-  const step = currentStep(currentPack, session);
+  const step = currentStep(session);
   if (!provider || !step) {
     session.recoverText = FALLBACK_MESSAGE;
     render(true);
     return;
   }
-  const observed = await fetchObserved(session);
+  let observed = {};
+  if (step.verify?.probe && currentTab?.id) {
+    try {
+      const result = await probe(currentTab.id, { v: step.verify.probe });
+      observed = result?.found ?? {};
+    } catch {}
+  }
   const text = await recoverExplain(provider, step, observed, session.attempts);
-  const active = getSession(currentTab?.id);
-  if (active !== session) return;
-  session.recoverText = text;
-  render(true);
+  if (getSession(currentTab?.id) === session) {
+    session.recoverText = text;
+    render(true);
+  }
 }
 
-async function handleRouteSubmit(userText) {
-  if (routerBusy) return;
-  const provider = getActiveProvider(settings);
-  if (!provider || !currentPack) {
-    readyMode = { kind: "refuse" };
-    render(true);
-    return;
-  }
-  routerBusy = true;
-  render(true);
-  try {
-    const result = await classify(provider, currentPack, userText);
-    if (result.kind === "goal") {
-      readyMode = { kind: "default" };
-      routerBusy = false;
-      await handleChipClick(result.id);
-      return;
-    }
-    if (result.kind === "choose") readyMode = { kind: "choose", ids: result.ids };
-    else readyMode = { kind: "refuse" };
-  } finally {
-    routerBusy = false;
-    render(true);
-  }
-}
+// ─── 폴링 ────────────────────────────────────────────────────────────────────
 
 async function pollTick() {
-  if (ticking) return;
-  if (document.hidden) return;
+  if (ticking || document.hidden) return;
   const session = currentTab ? getSession(currentTab.id) : null;
   if (!session) return;
-  if (session.status !== "running" && session.status !== "entry") return;
 
   ticking = true;
   try {
+    // tickStep 밖에서 done 이 된 경우(manual-advance 마지막 step 등) recipe 진행을 이어간다.
+    if (session.status === "done") {
+      const recipeSession = currentTab ? getRecipeSession(currentTab.id) : null;
+      if (recipeSession?.status === "running") await handleGuidanceDone();
+      return;
+    }
+
     if (session.status === "entry") {
-      if (urlMatchesPack(currentPack, currentTab.url)) {
-        const ok = await checkEntryReady(currentPack, currentTab.id).catch(() => false);
-        if (ok) {
-          setRunningStatus(session);
-          await skipAlreadyPassed(currentPack, session).catch(() => {});
-          render(true);
-        }
+      const url = currentTab.url ?? "";
+      if (url.startsWith("http://") || url.startsWith("https://")) {
+        const granted = await hasOriginPermission(url);
+        if (granted) await tryResolveCurrentTab();
       }
     } else if (session.status === "running") {
-      const before = { procIdx: session.procIdx, stepIdx: session.stepIdx, status: session.status };
-      await tickStep(currentPack, session).catch(() => {});
-      if (
-        before.procIdx !== session.procIdx ||
-        before.stepIdx !== session.stepIdx ||
-        before.status !== session.status
-      ) {
+      const before = { stepIdx: session.stepIdx, status: session.status };
+      await tickStep(session).catch(() => {});
+      const changed =
+        before.stepIdx !== session.stepIdx || before.status !== session.status;
+
+      if (session.status === "done") {
+        await handleGuidanceDone();
+      } else if (!changed && session.status === "running") {
+        const should = await checkShouldReinterpret(session).catch(() => false);
+        if (should) await handleReinterpret();
+      } else if (changed) {
         render(true);
       }
     }
@@ -427,39 +640,37 @@ function ensurePolling() {
   pollTimer = setInterval(pollTick, POLL_MS);
 }
 
+// ─── 탭 감시 ─────────────────────────────────────────────────────────────────
+
 async function refreshContext() {
-  const prevTabId = currentTab?.id ?? null;
+  const prevId = currentTab?.id ?? null;
   const prevUrl = currentTab?.url ?? null;
   currentTab = await getActiveTab();
-  if (currentTab?.id !== prevTabId || currentTab?.url !== prevUrl) {
-    readyMode = { kind: "default" };
-    routerBusy = false;
+
+  if (currentTab?.id !== prevId) {
+    uiMode = "prompt";
   }
-  const session = currentTab ? getSession(currentTab.id) : null;
-  if (session) {
-    currentPack = packs.find((p) => p.id === session.packId) ?? null;
-    if (
-      currentPack &&
-      session.status === "running" &&
-      !urlMatchesPack(currentPack, currentTab.url)
-    ) {
-      setEntryStatus(session);
+
+  if (currentTab?.url !== prevUrl) {
+    const session = currentTab ? getSession(currentTab.id) : null;
+    if (session?.status === "entry") {
+      injectProbe(currentTab.id).catch(() => {});
     }
-  } else {
-    currentPack = currentTab ? findPackForUrl(packs, currentTab.url) : null;
   }
+
   render();
 }
 
-function attachChromeWatchers() {
+function attachWatchers() {
   chrome.tabs.onActivated.addListener(refreshContext);
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (currentTab?.id === tabId && (changeInfo.url || changeInfo.status === "complete")) {
+  chrome.tabs.onUpdated.addListener((tabId, info) => {
+    if (currentTab?.id === tabId && (info.url || info.status === "complete")) {
       refreshContext();
     }
   });
   chrome.tabs.onRemoved.addListener((tabId) => {
     clearSession(tabId);
+    clearRecipeSession(tabId);
     if (currentTab?.id === tabId) refreshContext();
   });
   document.addEventListener("visibilitychange", () => {
@@ -471,13 +682,13 @@ function attachChromeWatchers() {
   });
 }
 
+// ─── 초기화 ──────────────────────────────────────────────────────────────────
+
 async function init() {
   settings = await getSettings();
-  packs = await loadPacks();
-  attachChromeWatchers();
+  attachWatchers();
   ensurePolling();
   await refreshContext();
-  console.info("[setup-copilot] panel loaded", { packs: packs.length });
 }
 
 init();

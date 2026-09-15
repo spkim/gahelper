@@ -1,0 +1,17 @@
+{
+  "id": "adsense-setup",
+  "version": 1,
+  "name": "Google AdSense 설정",
+  "description": "AdSense 계정에 사이트를 등록하고 광고 준비 상태를 확인한다.",
+  "type": "setup",
+  "match": {
+    "hosts": ["adsense.google.com"],
+    "urlIncludes": ["/adsense/"]
+  },
+  "goals": [
+    { "id": "register-site",    "label": "사이트 등록" },
+    { "id": "verify-site",      "label": "사이트 연결 확인" },
+    { "id": "check-ads-txt",    "label": "ads.txt 확인", "optional": true },
+    { "id": "review-readiness", "label": "심사 준비 확인" }
+  ]
+}
