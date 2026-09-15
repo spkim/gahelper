@@ -137,8 +137,10 @@ function renderRecipeSelect(node) {
         if (recipe) {
           urlRecDiv.hidden = false;
           node.querySelector('[data-slot="rec-name"]').textContent = recipe.name;
-          node.querySelector('[data-action="start-rec"]').addEventListener("click", () => {
-            startRecipeFlow(resolved.recipeId);
+          node.querySelector('[data-action="start-rec"]').addEventListener("click", async () => {
+            // user gesture context 안에서 첫 번째 await 로 권한 요청.
+            const permGranted = await grantCurrentTabPermission();
+            startRecipeFlow(resolved.recipeId, { permGranted });
           });
         }
       }
@@ -152,9 +154,10 @@ function renderRecipeSelect(node) {
     const recipe = getRecipe(recipeSession.recipeId);
     node.querySelector('[data-slot="resume-name"]').textContent =
       recipe?.name ?? recipeSession.recipeId;
-    node.querySelector('[data-action="resume-rec"]').addEventListener("click", () => {
+    node.querySelector('[data-action="resume-rec"]').addEventListener("click", async () => {
+      const permGranted = await grantCurrentTabPermission();
       const goal = currentGoal(tabId);
-      if (goal) startFlow(goal.label);
+      if (goal) startFlow(goal.label, { permGranted });
     });
   }
 
@@ -166,7 +169,11 @@ function renderRecipeSelect(node) {
     btn.type = "button";
     btn.className = "recipe-chip btn-ghost btn-sm";
     btn.textContent = recipe.name;
-    btn.addEventListener("click", () => startRecipeFlow(recipe.id));
+    btn.addEventListener("click", async () => {
+      // user gesture context 안에서 첫 번째 await 로 권한 요청.
+      const permGranted = await grantCurrentTabPermission();
+      startRecipeFlow(recipe.id, { permGranted });
+    });
     chips.appendChild(btn);
   }
 
@@ -349,7 +356,16 @@ function renderRefuse(node) {
 
 // ─── Recipe 플로우 ────────────────────────────────────────────────────────────
 
-async function startRecipeFlow(recipeId) {
+// user gesture context 에서 첫 번째 await 로 호출해야 한다.
+// requestOriginPermission 은 chrome.permissions.request 를 직접 호출하므로
+// 이미 허가된 경우에도 대화상자 없이 true 를 반환한다.
+async function grantCurrentTabPermission() {
+  const url = currentTab?.url ?? "";
+  if (!url.startsWith("http://") && !url.startsWith("https://")) return true;
+  try { return await requestOriginPermission(url); } catch { return false; }
+}
+
+async function startRecipeFlow(recipeId, hint = {}) {
   const tabId = currentTab?.id;
   if (!tabId) return;
 
@@ -361,7 +377,9 @@ async function startRecipeFlow(recipeId) {
   const goal = currentGoal(tabId);
   if (!goal) return;
 
-  await startFlow(goal.label);
+  uiMode = "resolving";
+  render(true);
+  await startFlow(goal.label, { ...hint, url: currentTab?.url ?? "" });
 }
 
 // guidance session 이 done 상태가 됐을 때 recipe 진행을 조율한다.
