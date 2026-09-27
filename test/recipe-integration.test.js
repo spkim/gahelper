@@ -1,10 +1,10 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolveRecipe } from '../lib/recipe-resolver.js';
 import {
   createRecipeSession, clearRecipeSession, currentGoal,
-  markGoalDone, markGoalBlocked, skipOptionalGoal, getRecipeSession,
+  markGoalDone, markGoalBlocked, getRecipeSession,
 } from '../lib/recipe-engine.js';
 import { getRecipe, listRecipes } from '../lib/recipe-store.js';
 import { guard } from '../lib/guard.js';
@@ -12,8 +12,8 @@ import { guard } from '../lib/guard.js';
 const TAB = 3001;
 const FIXTURES_DIR = new URL('../fixtures', import.meta.url).pathname;
 
-function fresh(recipeId) {
-  clearRecipeSession(TAB);
+async function fresh(recipeId) {
+  await clearRecipeSession(TAB);
   return createRecipeSession(TAB, recipeId);
 }
 
@@ -48,7 +48,7 @@ describe('Recipe 콘텐츠 — UI 하드코딩 금지', () => {
     it(`${recipe.id}: goals 는 의미적 명칭 (id, label, optional 만 허용)`, () => {
       for (const g of recipe.goals) {
         const keys = Object.keys(g);
-        const allowed = new Set(['id', 'label', 'description', 'optional']);
+        const allowed = new Set(['id', 'label', 'description', 'optional', 'site', 'payload']);
         for (const k of keys) {
           assert.ok(allowed.has(k),
             `goal "${g.id}" 에 허용되지 않는 필드: "${k}" — Recipe 에 UI 상세 정보를 넣지 마라`);
@@ -58,87 +58,65 @@ describe('Recipe 콘텐츠 — UI 하드코딩 금지', () => {
   }
 });
 
-// ─── AdSense Recipe 전체 흐름 ─────────────────────────────────────────────
+// ─── R04 Recipe 전체 흐름 (Gmail 라벨 필터, 2 goals) ─────────────────────
 
-describe('AdSense Recipe — resolver → engine → 완주', () => {
-  it('AdSense URL → resolver 가 adsense-setup 선택', () => {
-    const r = resolveRecipe({ url: 'https://adsense.google.com/adsense/publisher' });
-    assert.equal(r.recipeId, 'adsense-setup');
+describe('R04 Recipe (Gmail) — resolver → engine → 완주', () => {
+  beforeEach(async () => { await clearRecipeSession(TAB); });
+
+  it('Gmail URL → resolver 가 R04 선택', () => {
+    const r = resolveRecipe({ url: 'https://mail.google.com/mail/u/0/#settings' });
+    assert.equal(r.recipeId, 'R04');
     assert.equal(r.source, 'url');
   });
 
-  it('4개 goal 을 순서대로 완주한다', () => {
-    fresh('adsense-setup');
-    const expected = ['register-site', 'verify-site', 'check-ads-txt', 'review-readiness'];
-    for (const id of expected) {
-      assert.equal(currentGoal(TAB)?.id, id, `goal 순서 불일치: ${id}`);
-      markGoalDone(TAB);
-    }
+  it('2개 goal 을 순서대로 완주한다', async () => {
+    await fresh('R04');
+    assert.equal(currentGoal(TAB)?.id, 'step_0');
+    await markGoalDone(TAB);
+    assert.equal(currentGoal(TAB)?.id, 'step_1');
+    await markGoalDone(TAB);
     assert.equal(getRecipeSession(TAB)?.status, 'done');
   });
 
-  it('optional goal(check-ads-txt) skip 후 완주한다', () => {
-    fresh('adsense-setup');
-    markGoalDone(TAB); // register-site
-    markGoalDone(TAB); // verify-site
-    assert.equal(currentGoal(TAB)?.id, 'check-ads-txt');
-    skipOptionalGoal(TAB);
-    assert.equal(currentGoal(TAB)?.id, 'review-readiness');
-    markGoalDone(TAB);
-    assert.equal(getRecipeSession(TAB)?.status, 'done');
-  });
-
-  it('verify-site 에서 blocked → recipe blocked', () => {
-    fresh('adsense-setup');
-    markGoalDone(TAB); // register-site
-    assert.equal(currentGoal(TAB)?.id, 'verify-site');
-    markGoalBlocked(TAB);
+  it('step_0 에서 blocked → recipe blocked', async () => {
+    await fresh('R04');
+    assert.equal(currentGoal(TAB)?.id, 'step_0');
+    await markGoalBlocked(TAB);
     assert.equal(getRecipeSession(TAB)?.status, 'blocked');
     assert.equal(currentGoal(TAB), null);
   });
 });
 
-// ─── Search Console Recipe 전체 흐름 ──────────────────────────────────────
+// ─── R01 Recipe 전체 흐름 (ChatGPT 맞춤 지침, 1 goal) ────────────────────
 
-describe('Search Console Recipe — resolver → engine → 완주', () => {
-  it('Search Console URL → resolver 가 search-console-setup 선택', () => {
-    const r = resolveRecipe({ url: 'https://search.google.com/search-console/welcome' });
-    assert.equal(r.recipeId, 'search-console-setup');
+describe('R01 Recipe (ChatGPT) — resolver → engine → 완주', () => {
+  beforeEach(async () => { await clearRecipeSession(TAB); });
+
+  it('ChatGPT URL → resolver 가 R01 선택', () => {
+    const r = resolveRecipe({ url: 'https://chatgpt.com/settings' });
+    assert.equal(r.recipeId, 'R01');
     assert.equal(r.source, 'url');
   });
 
-  it('3개 goal 을 순서대로 완주한다', () => {
-    clearRecipeSession(TAB);
-    createRecipeSession(TAB, 'search-console-setup');
-    const expected = ['add-property', 'verify-ownership', 'check-coverage'];
-    for (const id of expected) {
-      assert.equal(currentGoal(TAB)?.id, id);
-      markGoalDone(TAB);
-    }
+  it('단일 goal 완주 → status: done', async () => {
+    await fresh('R01');
+    assert.equal(currentGoal(TAB)?.id, 'step_0');
+    await markGoalDone(TAB);
     assert.equal(getRecipeSession(TAB)?.status, 'done');
-  });
-
-  it('마지막 optional goal(check-coverage) skip 후 done', () => {
-    clearRecipeSession(TAB);
-    createRecipeSession(TAB, 'search-console-setup');
-    markGoalDone(TAB); // add-property
-    markGoalDone(TAB); // verify-ownership
-    assert.equal(currentGoal(TAB)?.optional, true);
-    const result = skipOptionalGoal(TAB);
-    assert.equal(result.status, 'done');
   });
 });
 
 // ─── Safety: Recipe goal label observed-only ──────────────────────────────
 
 describe('Safety — Recipe goal label 이 signature 에 없으면 guard 차단', () => {
-  it('AdSense goal label 은 빈 signature 에서 guard 를 통과하지 못한다', () => {
-    const recipe = getRecipe('adsense-setup');
+  it('R01 goal label 은 빈 signature 에서 guard 를 통과하지 못한다', () => {
+    const recipe = getRecipe('R01');
     for (const goal of recipe.goals) {
       const proc = {
         goalLabel: goal.label,
         steps: [{
           instruct: `'${goal.label}' 항목을 찾으세요.`,
+          usedLabels: [goal.label],
           target: { by: 'buttonText', text: goal.label },
           verify: { probe: { by: 'buttonText', text: goal.label }, is: 'found' },
           onFail: null,
@@ -150,13 +128,14 @@ describe('Safety — Recipe goal label 이 signature 에 없으면 guard 차단'
     }
   });
 
-  it('Search Console goal label 도 동일하게 차단된다', () => {
-    const recipe = getRecipe('search-console-setup');
+  it('R04 goal label 도 동일하게 차단된다', () => {
+    const recipe = getRecipe('R04');
     for (const goal of recipe.goals) {
       const proc = {
         goalLabel: goal.label,
         steps: [{
           instruct: `'${goal.label}' 화면으로 이동하세요.`,
+          usedLabels: [goal.label],
           target: { by: 'linkText', text: goal.label },
           verify: { probe: { by: 'linkText', text: goal.label }, is: 'found' },
           onFail: null,
@@ -167,7 +146,6 @@ describe('Safety — Recipe goal label 이 signature 에 없으면 guard 차단'
   });
 
   it('goal label 이 실제 signature 에 있으면 guard 를 통과한다', () => {
-    // 화면에 goal label 과 동일한 텍스트가 실제로 관측된 경우
     const sig = [
       { tag: 'h2', text: '사이트 등록', nearLabels: [] },
       { tag: 'button', text: '확인', nearLabels: [] },
@@ -176,6 +154,7 @@ describe('Safety — Recipe goal label 이 signature 에 없으면 guard 차단'
       goalLabel: '사이트 등록',
       steps: [{
         instruct: "'확인' 버튼을 눌러 진행하세요.",
+        usedLabels: ['확인'],
         target: { by: 'buttonText', text: '확인' },
         verify: { probe: { by: 'buttonText', text: '확인' }, is: 'found' },
         onFail: null,

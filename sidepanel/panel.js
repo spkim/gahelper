@@ -1,9 +1,11 @@
 import { getSettings, getActiveProvider, onSettingsChanged } from "../lib/storage.js";
 import { route, REFUSE_MESSAGE } from "../lib/router.js";
+import { addRecentGoal, getRecentGoals } from "../lib/recent-goals.js";
+import { sameRegisteredDomain } from "../lib/registered-domain.js";
 import {
   getSession, clearSession, createSession,
   currentStep, tickStep, skipAlreadyPassed,
-  reportFail, resumeFromBlocked, checkShouldReinterpret, resetForReinterpret,
+  reportFail, resumeFromBlocked, manualAdvance, checkShouldReinterpret, resetForReinterpret,
 } from "../lib/engine.js";
 import {
   getActiveTab, hasOriginPermission, requestOriginPermission,
@@ -16,7 +18,8 @@ import { resolveRecipe } from "../lib/recipe-resolver.js";
 import { getRecipe, listRecipes } from "../lib/recipe-store.js";
 import {
   createRecipeSession, getRecipeSession, clearRecipeSession,
-  currentGoal, markGoalDone,
+  currentGoal, markGoalDone, restoreRecipeSessions,
+  pauseForPopup, resumeFromPopup, getSessionForPopup,
 } from "../lib/recipe-engine.js";
 
 // ─── 상수 / 전역 ─────────────────────────────────────────────────────────────
@@ -27,7 +30,9 @@ const els = {
   root: document.getElementById("state-slot"),
   templates: {
     "no-provider":  document.getElementById("tpl-no-provider"),
-    "recipe-select": document.getElementById("tpl-recipe-select"),
+    "prompt":       document.getElementById("tpl-prompt"),
+    "recipe-pick":  document.getElementById("tpl-recipe-pick"),
+    "paused":       document.getElementById("tpl-paused"),
     "resolving":    document.getElementById("tpl-resolving"),
     "entry":        document.getElementById("tpl-entry"),
     "running":      document.getElementById("tpl-running"),
@@ -43,9 +48,13 @@ let currentTab = null;
 let renderedKey = null;
 let pollTimer = null;
 let ticking = false;
+let recentGoals = [];
 
 // session 없는 상태에서의 UI 모드.
-let uiMode = "prompt"; // "prompt" | "resolving" | "refuse"
+let uiMode = "prompt"; // "prompt" | "recipe-pick" | "resolving" | "refuse"
+
+// 새로 열린 탭 중 URL 확정을 기다리는 것 (tabId → openerTabId).
+const pendingPauseCheck = new Map();
 
 // ─── 상태 계산 ───────────────────────────────────────────────────────────────
 
@@ -64,10 +73,12 @@ function computeKind() {
     if (session.status === "entry")   return "entry";
     return "running";
   }
-  if (recipeSession?.status === "done") return "recipe-done";
-  if (uiMode === "resolving") return "resolving";
-  if (uiMode === "refuse")    return "refuse";
-  return "recipe-select";
+  if (recipeSession?.status === "paused")  return "paused";
+  if (recipeSession?.status === "done")    return "recipe-done";
+  if (uiMode === "resolving")   return "resolving";
+  if (uiMode === "refuse")      return "refuse";
+  if (uiMode === "recipe-pick") return "recipe-pick";
+  return "prompt";
 }
 
 function renderKey(kind) {
@@ -86,6 +97,7 @@ function renderKey(kind) {
     recipeStatus: recipeSession?.status ?? null,
     goalIdx: recipeSession?.goalIdx ?? null,
     uiMode,
+    recentCount: recentGoals.length,
   });
 }
 
@@ -106,7 +118,9 @@ function render(force = false) {
 
   const node = cloneTemplate(kind);
   if      (kind === "no-provider")  renderNoProvider(node);
-  else if (kind === "recipe-select") renderRecipeSelect(node);
+  else if (kind === "prompt")       renderPrompt(node);
+  else if (kind === "recipe-pick")  renderRecipePick(node);
+  else if (kind === "paused")       renderPaused(node);
   else if (kind === "resolving")    { /* spinner only */ }
   else if (kind === "entry")        renderEntry(node);
   else if (kind === "running")      renderRunning(node);
@@ -123,7 +137,7 @@ function renderNoProvider(node) {
   });
 }
 
-function renderRecipeSelect(node) {
+function renderPrompt(node) {
   const tabId = currentTab?.id ?? null;
   const recipeSession = tabId ? getRecipeSession(tabId) : null;
 
@@ -138,7 +152,6 @@ function renderRecipeSelect(node) {
           urlRecDiv.hidden = false;
           node.querySelector('[data-slot="rec-name"]').textContent = recipe.name;
           node.querySelector('[data-action="start-rec"]').addEventListener("click", async () => {
-            // user gesture context 안에서 첫 번째 await 로 권한 요청.
             const permGranted = await grantCurrentTabPermission();
             startRecipeFlow(resolved.recipeId, { permGranted });
           });
@@ -161,22 +174,6 @@ function renderRecipeSelect(node) {
     });
   }
 
-  // Recipe 칩
-  const chips = node.querySelector('[data-slot="chips"]');
-  for (const recipe of listRecipes()) {
-    if (recipe.id === "generic-setup") continue;
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "recipe-chip btn-ghost btn-sm";
-    btn.textContent = recipe.name;
-    btn.addEventListener("click", async () => {
-      // user gesture context 안에서 첫 번째 await 로 권한 요청.
-      const permGranted = await grantCurrentTabPermission();
-      startRecipeFlow(recipe.id, { permGranted });
-    });
-    chips.appendChild(btn);
-  }
-
   // 자연어 입력
   const form = node.querySelector('[data-slot="form"]');
   const input = node.querySelector('[data-slot="input"]');
@@ -186,6 +183,49 @@ function renderRecipeSelect(node) {
     if (text) handleRouteSubmit(text);
   });
   setTimeout(() => input?.focus?.(), 0);
+
+  // 최근 사용 칩
+  if (recentGoals.length > 0) {
+    const recentSection = node.querySelector('[data-slot="recent-section"]');
+    recentSection.hidden = false;
+    const chipsEl = node.querySelector('[data-slot="recent-chips"]');
+    for (const text of recentGoals) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "recent-chip btn-ghost btn-sm";
+      btn.textContent = text;
+      btn.addEventListener("click", () => handleRouteSubmit(text));
+      chipsEl.appendChild(btn);
+    }
+  }
+
+  // 레시피 진입 버튼
+  node.querySelector('[data-action="open-recipe-pick"]').addEventListener("click", () => {
+    uiMode = "recipe-pick";
+    render(true);
+  });
+}
+
+function renderRecipePick(node) {
+  node.querySelector('[data-action="back"]').addEventListener("click", () => {
+    uiMode = "prompt";
+    render(true);
+  });
+
+  const chips = node.querySelector('[data-slot="chips"]');
+  for (const recipe of listRecipes()) {
+    if (recipe.id === "generic-setup") continue;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "recipe-chip btn-ghost btn-sm";
+    btn.textContent = recipe.name;
+    btn.addEventListener("click", async () => {
+      const permGranted = await grantCurrentTabPermission();
+      uiMode = "prompt";
+      startRecipeFlow(recipe.id, { permGranted });
+    });
+    chips.appendChild(btn);
+  }
 }
 
 function renderEntry(node) {
@@ -198,9 +238,9 @@ function renderEntry(node) {
   const goBtn = node.querySelector('[data-action="go-entry"]');
   goBtn.textContent = "현재 화면으로 진행";
   goBtn.addEventListener("click", () => tryResolveCurrentTab());
-  node.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+  node.querySelector('[data-action="cancel"]').addEventListener("click", async () => {
     const tabId = currentTab?.id;
-    if (tabId) { clearSession(tabId); clearRecipeSession(tabId); }
+    if (tabId) { clearSession(tabId); await clearRecipeSession(tabId); }
     uiMode = "prompt";
     render(true);
   });
@@ -257,6 +297,34 @@ function renderRunning(node) {
     if (textEl) textEl.textContent = `${recipe?.name ?? ""} — ${done + 1} / ${total}`;
   }
 
+  // payload 복사 버튼
+  const goalForPayload = (() => {
+    const rs = getRecipeSession(tabId);
+    if (!rs) return null;
+    return getRecipe(rs.recipeId)?.goals?.[rs.goalIdx] ?? null;
+  })();
+  if (goalForPayload?.payload?.kind === "clipboard") {
+    const copySection = node.querySelector('[data-slot="payload-copy"]');
+    copySection.hidden = false;
+    const copyBtn = node.querySelector('[data-action="copy-payload"]');
+    copyBtn.textContent = `${goalForPayload.payload.label} 복사`;
+    const fallbackDiv = node.querySelector('[data-slot="payload-fallback"]');
+    const fallbackText = node.querySelector('[data-slot="payload-text"]');
+    fallbackText.value = goalForPayload.payload.content;
+
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(goalForPayload.payload.content);
+        const orig = copyBtn.textContent;
+        copyBtn.textContent = "✓ 복사됨";
+        setTimeout(() => { copyBtn.textContent = orig; }, 2000);
+      } catch {
+        fallbackDiv.hidden = false;
+        fallbackText.select();
+      }
+    });
+  }
+
   renderRail(node.querySelector('[data-slot="rail"]'), procedure.steps, stepIdx);
   node.querySelector('[data-slot="proc-index"]').textContent =
     `${stepIdx + 1} / ${procedure.steps.length}`;
@@ -306,17 +374,14 @@ function renderBlocked(node) {
       const s = getSession(tabId);
       if (!s) return;
       resumeFromBlocked(s);
-      s.stepIdx += 1;
-      if (s.stepIdx >= (s.procedure?.steps?.length ?? 0)) s.status = "done";
-      else s.status = "running";
-      s.recoverText = null;
+      manualAdvance(s);
       render(true);
       ensurePolling();
     });
   }
 
-  node.querySelector('[data-action="restart"]').addEventListener("click", () => {
-    if (tabId) { clearSession(tabId); clearRecipeSession(tabId); }
+  node.querySelector('[data-action="restart"]').addEventListener("click", async () => {
+    if (tabId) { clearSession(tabId); await clearRecipeSession(tabId); }
     uiMode = "prompt";
     render(true);
   });
@@ -327,8 +392,8 @@ function renderDone(node) {
   const session = tabId ? getSession(tabId) : null;
   node.querySelector('[data-slot="goal-label"]').textContent =
     session?.procedure?.goalLabel ?? "";
-  node.querySelector('[data-action="restart"]').addEventListener("click", () => {
-    if (tabId) { clearSession(tabId); clearRecipeSession(tabId); }
+  node.querySelector('[data-action="restart"]').addEventListener("click", async () => {
+    if (tabId) { clearSession(tabId); await clearRecipeSession(tabId); }
     uiMode = "prompt";
     render(true);
   });
@@ -339,11 +404,46 @@ function renderRecipeDone(node) {
   const recipeSession = tabId ? getRecipeSession(tabId) : null;
   const recipe = recipeSession ? getRecipe(recipeSession.recipeId) : null;
   node.querySelector('[data-slot="goal-label"]').textContent = recipe?.name ?? "";
-  node.querySelector('[data-action="restart"]').addEventListener("click", () => {
-    if (tabId) { clearSession(tabId); clearRecipeSession(tabId); }
+  node.querySelector('[data-action="restart"]').addEventListener("click", async () => {
+    if (tabId) { clearSession(tabId); await clearRecipeSession(tabId); }
     uiMode = "prompt";
     render(true);
   });
+}
+
+function renderPaused(node) {
+  node.querySelector('[data-action="popup-continue"]').addEventListener("click", async () => {
+    const tabId = currentTab?.id;
+    if (!tabId) return;
+    await resumeAfterPopup(tabId);
+  });
+  node.querySelector('[data-action="popup-cancel"]').addEventListener("click", async () => {
+    const tabId = currentTab?.id;
+    if (tabId) { clearSession(tabId); await clearRecipeSession(tabId); }
+    uiMode = "prompt";
+    render(true);
+  });
+}
+
+// 팝업 닫힘 또는 "계속하기" 버튼 후 재개 처리.
+// guidance session 이 있으면 reinterpret, 없으면 (SW 재시작 후) startFlow.
+async function resumeAfterPopup(tabId) {
+  const resumed = await resumeFromPopup(tabId);
+  if (!resumed) return; // 이미 다른 경로로 재개됐거나 paused 가 아님
+  if (tabId !== currentTab?.id) return; // 현재 탭이 아니면 폴링에 맡김
+  const session = getSession(tabId);
+  if (session) {
+    await handleReinterpret();
+  } else {
+    const goal = currentGoal(tabId);
+    if (goal) {
+      uiMode = "resolving";
+      render(true);
+      await startFlow(goal.label, { url: currentTab.url ?? "" });
+    } else {
+      render(true);
+    }
+  }
 }
 
 function renderRefuse(node) {
@@ -372,8 +472,8 @@ async function startRecipeFlow(recipeId, hint = {}) {
   // generic-setup 은 RecipeSession 없이 자연어 입력 경로 사용.
   if (recipeId === "generic-setup") return;
 
-  clearRecipeSession(tabId);
-  createRecipeSession(tabId, recipeId);
+  await clearRecipeSession(tabId);
+  await createRecipeSession(tabId, recipeId);
   const goal = currentGoal(tabId);
   if (!goal) return;
 
@@ -393,7 +493,7 @@ async function handleGuidanceDone() {
     return;
   }
 
-  const result = markGoalDone(tabId);
+  const result = await markGoalDone(tabId);
   clearSession(tabId);
 
   if (result.status === "done") {
@@ -482,6 +582,8 @@ async function handleRouteSubmit(userText) {
   }
 
   const { goalText } = routeResult;
+  await addRecentGoal(userText);
+  recentGoals = await getRecentGoals();
   await startFlow(goalText, { permGranted, url });
 }
 
@@ -572,6 +674,7 @@ async function handleFail() {
 }
 
 async function handleReinterpret() {
+  if (uiMode === "resolving") return;
   const session = currentTab ? getSession(currentTab.id) : null;
   if (!session) return;
   const provider = getActiveProvider(settings);
@@ -658,6 +761,34 @@ function ensurePolling() {
   pollTimer = setInterval(pollTick, POLL_MS);
 }
 
+// ─── 팝업 감지 ───────────────────────────────────────────────────────────────
+
+// openerTabId: 보조 신호. 있으면 그 탭의 세션을 우선 조회; 없으면 현재 탭 세션.
+// 도메인 비교가 주 조건 — 같은 도메인이면 OAuth 팝업이 아니므로 무시.
+async function checkAndMaybePause(newTabId, newUrl, openerTabId) {
+  const targetTabId = openerTabId ?? currentTab?.id;
+  if (!targetTabId) return;
+
+  const recipeSession = getRecipeSession(targetTabId);
+  if (!recipeSession || recipeSession.status !== 'running') return;
+
+  let targetUrl;
+  try {
+    const tab = await chrome.tabs.get(targetTabId);
+    targetUrl = tab.url ?? '';
+  } catch { return; }
+
+  let targetHost = '', newHost = '';
+  try { targetHost = new URL(targetUrl).hostname; } catch {}
+  try { newHost = new URL(newUrl).hostname; } catch {}
+
+  if (!targetHost || !newHost) return;
+  if (sameRegisteredDomain(targetHost, newHost)) return;
+
+  await pauseForPopup(targetTabId, newTabId);
+  if (targetTabId === currentTab?.id) render(true);
+}
+
 // ─── 탭 감시 ─────────────────────────────────────────────────────────────────
 
 async function refreshContext() {
@@ -681,14 +812,34 @@ async function refreshContext() {
 
 function attachWatchers() {
   chrome.tabs.onActivated.addListener(refreshContext);
+
+  chrome.tabs.onCreated.addListener((tab) => {
+    // openerTabId 유무와 관계없이 등록; 도메인 비교가 주 조건이므로 항상 pending에 넣음.
+    // openerTabId 는 대상 세션 특정을 위한 보조 신호.
+    pendingPauseCheck.set(tab.id, tab.openerTabId ?? null);
+  });
+
   chrome.tabs.onUpdated.addListener((tabId, info) => {
     if (currentTab?.id === tabId && (info.url || info.status === "complete")) {
       refreshContext();
     }
+    if (info.url && pendingPauseCheck.has(tabId)) {
+      const openerTabId = pendingPauseCheck.get(tabId);
+      pendingPauseCheck.delete(tabId);
+      checkAndMaybePause(tabId, info.url, openerTabId).catch(() => {});
+    }
   });
+
   chrome.tabs.onRemoved.addListener((tabId) => {
+    pendingPauseCheck.delete(tabId);
+
+    const waiting = getSessionForPopup(tabId);
+    if (waiting) {
+      resumeAfterPopup(waiting.tabId).catch(() => {});
+    }
+
     clearSession(tabId);
-    clearRecipeSession(tabId);
+    clearRecipeSession(tabId).catch(() => {});
     if (currentTab?.id === tabId) refreshContext();
   });
   document.addEventListener("visibilitychange", () => {
@@ -704,9 +855,22 @@ function attachWatchers() {
 
 async function init() {
   settings = await getSettings();
+  recentGoals = await getRecentGoals();
+  await restoreRecipeSessions();
   attachWatchers();
   ensurePolling();
   await refreshContext();
+
+  // SW 재시작 후 팝업이 이미 닫혀있으면 즉시 재개.
+  const tabId = currentTab?.id;
+  if (tabId) {
+    const rs = getRecipeSession(tabId);
+    if (rs?.status === 'paused' && rs.popupTabId != null) {
+      let popupGone = false;
+      try { await chrome.tabs.get(rs.popupTabId); } catch { popupGone = true; }
+      if (popupGone) await resumeAfterPopup(tabId);
+    }
+  }
 }
 
 init();

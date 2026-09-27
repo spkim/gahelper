@@ -281,6 +281,42 @@ button:focus-visible {
 
 .btn-sm { padding: 5px 11px; font-size: 13px; }
 
+/* 최근 사용 칩 */
+.recent-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.recent-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  color: var(--muted);
+  border-color: var(--line);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-chip:hover { color: var(--ink); }
+
+/* 레시피 진입 버튼 */
+.recipe-entry-btn {
+  align-self: flex-start;
+  font-size: 13px;
+  color: var(--azure);
+  border-color: transparent;
+  padding: 4px 0;
+}
+
+.recipe-entry-btn:hover { background: transparent; text-decoration: underline; }
+
+/* 레시피 선택 화면 헤더 */
+.recipe-pick-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recipe-pick-head .section-label { margin: 0; }
+
 /* Recipe 진행 표시 */
 .goal-progress {
   margin-bottom: 4px;
@@ -291,6 +327,53 @@ button:focus-visible {
   font-size: 11px;
   letter-spacing: 0.06em;
   color: var(--muted);
+}
+
+/* 클립보드 페이로드 복사 */
+.payload-copy-section {
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.payload-copy-btn {
+  align-self: flex-start;
+  color: var(--azure);
+  border-color: var(--azure);
+}
+
+.payload-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.payload-fallback-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.payload-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  resize: vertical;
+  min-height: 64px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  width: 100%;
+}
+
+/* 팝업 일시정지 카드 */
+.card .card-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 12px;
+  line-height: 1.5;
 }
 
 @media (prefers-reduced-motion: reduce) {

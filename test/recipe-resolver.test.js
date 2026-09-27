@@ -4,8 +4,8 @@ import { resolveRecipe } from '../lib/recipe-resolver.js';
 
 describe('resolveRecipe — explicit 선택', () => {
   it('명시적 recipeId를 최우선으로 선택한다', () => {
-    const r = resolveRecipe({ explicitRecipeId: 'adsense-setup', url: 'https://naver.com' });
-    assert.equal(r.recipeId, 'adsense-setup');
+    const r = resolveRecipe({ explicitRecipeId: 'R01', url: 'https://naver.com' });
+    assert.equal(r.recipeId, 'R01');
     assert.equal(r.source, 'explicit');
   });
   it('존재하지 않는 explicitRecipeId는 다음 우선순위로 넘긴다', () => {
@@ -17,8 +17,8 @@ describe('resolveRecipe — explicit 선택', () => {
 
 describe('resolveRecipe — launch intent', () => {
   it('launchIntent.recipeId로 선택한다', () => {
-    const r = resolveRecipe({ launchIntent: { recipeId: 'search-console-setup' } });
-    assert.equal(r.recipeId, 'search-console-setup');
+    const r = resolveRecipe({ launchIntent: { recipeId: 'R04' } });
+    assert.equal(r.recipeId, 'R04');
     assert.equal(r.source, 'launch-intent');
   });
   it('존재하지 않는 launchIntent → 다음 우선순위', () => {
@@ -28,18 +28,18 @@ describe('resolveRecipe — launch intent', () => {
   });
   it('explicit이 launchIntent보다 우선한다', () => {
     const r = resolveRecipe({
-      explicitRecipeId: 'adsense-setup',
-      launchIntent: { recipeId: 'search-console-setup' },
+      explicitRecipeId: 'R01',
+      launchIntent: { recipeId: 'R04' },
     });
-    assert.equal(r.recipeId, 'adsense-setup');
+    assert.equal(r.recipeId, 'R01');
     assert.equal(r.source, 'explicit');
   });
 });
 
 describe('resolveRecipe — active session 유지', () => {
   it('진행 중인 RecipeSession을 유지한다', () => {
-    const r = resolveRecipe({ activeRecipeSession: { recipeId: 'adsense-setup' } });
-    assert.equal(r.recipeId, 'adsense-setup');
+    const r = resolveRecipe({ activeRecipeSession: { recipeId: 'R01' } });
+    assert.equal(r.recipeId, 'R01');
     assert.equal(r.source, 'session');
   });
   it('존재하지 않는 session recipeId → 다음 우선순위', () => {
@@ -49,14 +49,14 @@ describe('resolveRecipe — active session 유지', () => {
 });
 
 describe('resolveRecipe — URL 기반 선택', () => {
-  it('AdSense URL에서 adsense-setup 선택', () => {
-    const r = resolveRecipe({ url: 'https://adsense.google.com/adsense/publisher' });
-    assert.equal(r.recipeId, 'adsense-setup');
+  it('ChatGPT URL에서 R01 선택', () => {
+    const r = resolveRecipe({ url: 'https://chatgpt.com/settings' });
+    assert.equal(r.recipeId, 'R01');
     assert.equal(r.source, 'url');
   });
-  it('Search Console URL에서 search-console-setup 선택', () => {
-    const r = resolveRecipe({ url: 'https://search.google.com/search-console/welcome' });
-    assert.equal(r.recipeId, 'search-console-setup');
+  it('Gmail URL에서 R04 선택', () => {
+    const r = resolveRecipe({ url: 'https://mail.google.com/mail/u/0/#settings' });
+    assert.equal(r.recipeId, 'R04');
     assert.equal(r.source, 'url');
   });
   it('미등록 사이트 URL → generic-setup', () => {
@@ -87,10 +87,10 @@ describe('resolveRecipe — generic fallback', () => {
 describe('resolveRecipe — 우선순위 검증', () => {
   it('session이 URL보다 우선한다', () => {
     const r = resolveRecipe({
-      activeRecipeSession: { recipeId: 'search-console-setup' },
-      url: 'https://adsense.google.com/adsense/',
+      activeRecipeSession: { recipeId: 'R04' },
+      url: 'https://chatgpt.com/',
     });
-    assert.equal(r.recipeId, 'search-console-setup');
+    assert.equal(r.recipeId, 'R04');
     assert.equal(r.source, 'session');
   });
 });

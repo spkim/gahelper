@@ -8,14 +8,14 @@ describe('getRecipe', () => {
     assert.equal(r?.id, 'generic-setup');
     assert.equal(r?.type, 'setup');
   });
-  it('adsense-setup을 반환한다', () => {
-    const r = getRecipe('adsense-setup');
-    assert.equal(r?.id, 'adsense-setup');
+  it('R01을 반환한다', () => {
+    const r = getRecipe('R01');
+    assert.equal(r?.id, 'R01');
     assert.ok(Array.isArray(r?.goals) && r.goals.length > 0);
   });
-  it('search-console-setup을 반환한다', () => {
-    const r = getRecipe('search-console-setup');
-    assert.equal(r?.id, 'search-console-setup');
+  it('R04를 반환한다', () => {
+    const r = getRecipe('R04');
+    assert.equal(r?.id, 'R04');
     assert.ok(Array.isArray(r?.goals) && r.goals.length > 0);
   });
   it('존재하지 않는 id는 null', () => {
@@ -27,47 +27,47 @@ describe('getRecipe', () => {
 });
 
 describe('listRecipes', () => {
-  it('3개의 Recipe를 반환한다', () => {
-    assert.equal(listRecipes().length, 3);
+  it('R01–R10 + generic-setup = 11개를 반환한다', () => {
+    assert.equal(listRecipes().length, 11);
   });
   it('generic-setup이 포함된다', () => {
     assert.ok(listRecipes().some((r) => r.id === 'generic-setup'));
   });
-  it('adsense-setup이 포함된다', () => {
-    assert.ok(listRecipes().some((r) => r.id === 'adsense-setup'));
+  it('R01이 포함된다', () => {
+    assert.ok(listRecipes().some((r) => r.id === 'R01'));
   });
   it('원본 배열을 변경해도 REGISTRY에 영향 없다', () => {
     const list = listRecipes();
     list.pop();
-    assert.equal(listRecipes().length, 3);
+    assert.equal(listRecipes().length, 11);
   });
 });
 
 describe('matchRecipes — host 매칭', () => {
-  it('adsense.google.com → adsense-setup', () => {
-    const m = matchRecipes({ host: 'adsense.google.com' });
-    assert.ok(m.some((r) => r.id === 'adsense-setup'));
+  it('chatgpt.com → R01', () => {
+    const m = matchRecipes({ host: 'chatgpt.com' });
+    assert.ok(m.some((r) => r.id === 'R01'));
   });
-  it('search.google.com → search-console-setup', () => {
-    const m = matchRecipes({ host: 'search.google.com' });
-    assert.ok(m.some((r) => r.id === 'search-console-setup'));
+  it('mail.google.com → R04', () => {
+    const m = matchRecipes({ host: 'mail.google.com' });
+    assert.ok(m.some((r) => r.id === 'R04'));
   });
   it('미등록 host → 빈 배열', () => {
     assert.deepEqual(matchRecipes({ host: 'tistory.com' }), []);
   });
   it('generic-setup은 matchRecipes에 포함되지 않는다', () => {
-    assert.ok(!matchRecipes({ host: 'adsense.google.com' }).some((r) => r.id === 'generic-setup'));
+    assert.ok(!matchRecipes({ host: 'chatgpt.com' }).some((r) => r.id === 'generic-setup'));
   });
 });
 
 describe('matchRecipes — URL 매칭', () => {
-  it('AdSense URL → adsense-setup', () => {
-    const m = matchRecipes({ url: 'https://adsense.google.com/adsense/publisher' });
-    assert.ok(m.some((r) => r.id === 'adsense-setup'));
+  it('ChatGPT URL → R01', () => {
+    const m = matchRecipes({ url: 'https://chatgpt.com/settings' });
+    assert.ok(m.some((r) => r.id === 'R01'));
   });
-  it('Search Console URL → search-console-setup', () => {
-    const m = matchRecipes({ url: 'https://search.google.com/search-console/welcome' });
-    assert.ok(m.some((r) => r.id === 'search-console-setup'));
+  it('Gmail URL → R04', () => {
+    const m = matchRecipes({ url: 'https://mail.google.com/mail/u/0/#settings' });
+    assert.ok(m.some((r) => r.id === 'R04'));
   });
   it('인자 없으면 빈 배열', () => {
     assert.deepEqual(matchRecipes(), []);

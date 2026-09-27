@@ -7,7 +7,7 @@
   const OVERLAY_MS = 2000;
   const WAIT_MS = 5000;
 
-  // ---------- scrub (§5.3) ----------
+  // ---------- scrub (§5.3 + §R4.6) ----------
   // 반환 직전 content script 내부에서만 수행. 원본 텍스트가 경계를 넘지 않도록.
   const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
   const PHONE_RE = /(?<!\d)(?:\+?\d[\d\s\-().]{7,}\d)(?!\d)/g;
@@ -17,11 +17,49 @@
   const AT_HANDLE_RE = /(\/@)[\w.-]+/g;
   const USER_PATH_RE = /(\/(?:users?|u|profile|account|member|owner|by)\/)[\w.-]+/g;
 
+  // §R4.6 — 서비스별 접두사 패턴. lib/scrub.js 와 반드시 동기화할 것.
+  const SECRET_PATTERNS = [
+    /sk-ant-[A-Za-z0-9_-]{10,}/g,    // Anthropic
+    /sk-[A-Za-z0-9_-]{20,}/g,        // OpenAI 계열
+    /ntn_[A-Za-z0-9]{20,}/g,         // Notion
+    /secret_[A-Za-z0-9]{20,}/g,      // Notion (구형)
+    /gh[pousr]_[A-Za-z0-9]{20,}/g,   // GitHub
+    /xox[abprs]-[A-Za-z0-9-]{10,}/g, // Slack
+    /AIza[0-9A-Za-z_-]{30,}/g,       // Google API key
+  ];
+
+  function shannonEntropy(s) {
+    if (!s) return 0;
+    const freq = {};
+    for (const c of s) freq[c] = (freq[c] || 0) + 1;
+    const len = s.length;
+    return Object.values(freq).reduce((sum, f) => {
+      const p = f / len;
+      return sum - p * Math.log2(p);
+    }, 0);
+  }
+
+  function looksLikeToken(s) {
+    return (
+      /^[A-Za-z0-9_\-.]{24,}$/.test(s) &&
+      /[A-Z]/.test(s) &&
+      /[a-z]/.test(s) &&
+      /[0-9]/.test(s) &&
+      shannonEntropy(s) > 3.5
+    );
+  }
+
   function scrubText(input, limit = TEXT_LIMIT) {
     if (input == null) return "";
     let s = String(input);
     s = s.replace(EMAIL_RE, "***@***");
     s = s.replace(PHONE_RE, "***");
+    // 접두사 패턴(§R4.6) — TOKEN_RE 보다 먼저 적용해 짧은 키도 잡는다.
+    for (const re of SECRET_PATTERNS) {
+      re.lastIndex = 0;
+      s = s.replace(re, "[secret]");
+    }
+    s = s.replace(/\S+/g, (m) => (looksLikeToken(m) ? "[secret]" : m));
     s = s.replace(TOKEN_RE, "***");
     s = s.replace(HOST_HANDLE_RE, "$1***.$3");
     s = s.replace(AT_HANDLE_RE, "$1***");

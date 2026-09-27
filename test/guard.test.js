@@ -12,18 +12,20 @@ const SIG = [
   { tag: "button", text: "취소", nearLabels: [], role: undefined, ariaLabel: undefined },
 ];
 
-// 정상 절차 — 관측된 라벨만 사용, verify 있음.
+// 정상 절차 — 관측된 라벨만 사용, verify 있음, usedLabels 포함.
 const VALID_PROC = {
   goalLabel: "카테고리 설정",
   steps: [
     {
       instruct: "'카테고리 관리' 링크를 클릭하세요.",
+      usedLabels: ["카테고리 관리"],
       target: { by: "linkText", text: "카테고리 관리" },
-      verify: { probe: { by: "urlIncludes", text: "/category" }, is: "found" },
+      verify: { is: "urlIncludes", text: "/category" },
       onFail: "상단 메뉴에서 카테고리를 찾아보세요.",
     },
     {
       instruct: "'저장' 버튼을 눌러 변경사항을 저장하세요.",
+      usedLabels: ["저장"],
       target: { by: "buttonText", text: "저장" },
       verify: { probe: { by: "buttonText", text: "저장" }, is: "found" },
       onFail: null,
@@ -77,6 +79,7 @@ describe("guard — 통과 케이스", () => {
       steps: [
         {
           instruct: "'카테고리 관리' 페이지로 이동합니다.",
+          usedLabels: ["카테고리 관리"],
           verify: { is: "urlIncludes", text: "/manage/category" },
         },
       ],
@@ -109,6 +112,7 @@ describe("guard — 불통과 케이스 (절차 전체 폐기)", () => {
       steps: [
         {
           instruct: "'존재하지않는메뉴' 항목을 클릭하세요.",
+          usedLabels: ["존재하지않는메뉴"],
           verify: { probe: { by: "buttonText", text: "저장" }, is: "found" },
         },
       ],
@@ -185,6 +189,7 @@ describe("guard — 관측 풀 부분 일치", () => {
       steps: [
         {
           instruct: "'저장' 버튼을 누르세요.",
+          usedLabels: ["저장"],
           verify: { probe: { by: "buttonText", text: "저장" }, is: "found" },
         },
       ],

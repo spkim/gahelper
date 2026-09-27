@@ -10,9 +10,10 @@
     "seed": "node scripts/seed-from-packs.js"
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
-    "pg": "^8.13.0",
-    "dotenv": "^16.4.5"
+    "pg": "^8.13.0"
   },
   "engines": {
     "node": ">=20"

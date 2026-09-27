@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "note": "goalText 에는 화면 라벨을 적지 않는다. 의도만 적고, 라벨은 resolver 가 현재 화면에서 읽는다.",
+  "recipes": [
+    {
+      "id": "R01",
+      "title": "ChatGPT에 나에 대한 맞춤 지침 설정하기",
+      "tier": 1,
+      "tests": ["modal"],
+      "prereq": ["ChatGPT 계정 로그인"],
+      "steps": [
+        { "site": "https://chatgpt.com/", "goalText": "ChatGPT 맞춤 지침(개인화) 설정 열어서 나에 대한 정보 입력하기" }
+      ],
+      "manualCheck": "새 대화에서 맞춤 지침이 반영되는지"
+    },
+    {
+      "id": "R02",
+      "title": "Claude에 나의 선호 설정 입력하기",
+      "tier": 1,
+      "tests": ["multi_screen"],
+      "prereq": ["Claude 계정 로그인"],
+      "steps": [
+        { "site": "https://claude.ai/", "goalText": "Claude 설정에서 프로필의 개인 선호 사항 입력하기" }
+      ],
+      "manualCheck": "설정 화면에 입력한 선호가 저장되어 있는지"
+    },
+    {
+      "id": "R03",
+      "title": "구글 캘린더 기본 알림 시간 바꾸기",
+      "tier": 1,
+      "tests": ["multi_screen"],
+      "prereq": ["구글 테스트 계정 로그인"],
+      "steps": [
+        { "site": "https://calendar.google.com/", "goalText": "구글 캘린더 일정의 기본 알림 시간을 30분 전으로 변경하기" }
+      ],
+      "manualCheck": "새 일정을 만들 때 알림이 30분 전으로 잡히는지"
+    },
+    {
+      "id": "R04",
+      "title": "거래처 메일에 자동으로 라벨 붙이기",
+      "tier": 2,
+      "tests": ["multi_screen", "form"],
+      "prereq": ["구글 테스트 계정 로그인", "라벨을 붙일 발신 주소 하나 정해두기"],
+      "steps": [
+        { "site": "https://mail.google.com/", "goalText": "지메일에서 '거래처' 라벨 만들기" },
+        { "site": "https://mail.google.com/", "goalText": "지메일에서 특정 보낸사람의 메일에 '거래처' 라벨을 자동으로 붙이는 필터 만들기" }
+      ],
+      "manualCheck": "설정의 필터 목록에 새 필터가 있는지"
+    },
+    {
+      "id": "R05",
+      "title": "구글 드라이브 폴더를 동료와 편집자로 공유하기",
+      "tier": 2,
+      "tests": ["iframe_dialog"],
+      "prereq": ["구글 테스트 계정 로그인", "공유할 테스트 폴더 하나", "공유받을 두 번째 테스트 주소"],
+      "steps": [
+        { "site": "https://drive.google.com/", "goalText": "구글 드라이브 폴더를 다른 사람에게 편집자 권한으로 공유하기" }
+      ],
+      "manualCheck": "두 번째 계정에서 폴더가 보이고 편집 가능한지"
+    },
+    {
+      "id": "R06",
+      "title": "Anthropic API 키 발급하기 (Setup Copilot 자체 온보딩)",
+      "tier": 2,
+      "tests": ["secret_on_screen"],
+      "prereq": ["Anthropic Console 테스트 계정"],
+      "steps": [
+        { "site": "https://console.anthropic.com/", "goalText": "Anthropic 콘솔에서 새 API 키 만들기" }
+      ],
+      "manualCheck": "키 목록에 새 키가 있는지. 테스트 후 즉시 키 삭제",
+      "securityCheck": "네트워크 탭에서 LLM 요청 본문에 키 문자열(sk-ant-)이 없어야 함"
+    },
+    {
+      "id": "R07",
+      "title": "Claude에 구글 드라이브 연결하기",
+      "tier": 3,
+      "tests": ["oauth_popup"],
+      "prereq": ["Claude 계정 로그인", "구글 테스트 계정"],
+      "steps": [
+        { "site": "https://claude.ai/", "goalText": "Claude 설정에서 구글 드라이브 커넥터 연결하기" }
+      ],
+      "manualCheck": "Claude 대화에서 드라이브 파일 검색이 되는지. 테스트 후 연결 해제"
+    },
+    {
+      "id": "R08",
+      "title": "노션 통합 만들고 페이지에 연결하기",
+      "tier": 3,
+      "tests": ["secret_on_screen", "multi_site"],
+      "prereq": ["노션 테스트 워크스페이스", "연결할 테스트 페이지 하나"],
+      "steps": [
+        { "site": "https://www.notion.so/my-integrations", "goalText": "노션에서 새 내부 통합 만들기" },
+        { "site": "https://www.notion.so/", "goalText": "노션 페이지에 방금 만든 통합 연결하기" }
+      ],
+      "manualCheck": "페이지 연결 목록에 통합이 보이는지. 테스트 후 통합 삭제",
+      "securityCheck": "네트워크 탭에서 LLM 요청 본문에 통합 시크릿(ntn_ 또는 secret_)이 없어야 함"
+    },
+    {
+      "id": "R09",
+      "title": "n8n에 지메일 연결하기",
+      "tier": 3,
+      "tests": ["modal", "oauth_popup"],
+      "prereq": ["n8n Cloud 체험 계정 또는 로컬 n8n", "구글 테스트 계정"],
+      "steps": [
+        { "site": "https://app.n8n.cloud/", "goalText": "n8n에서 지메일 자격증명 새로 추가하고 구글 계정으로 연결하기" }
+      ],
+      "manualCheck": "자격증명 목록에 지메일 항목이 연결됨 상태로 있는지"
+    },
+    {
+      "id": "R10",
+      "title": "n8n에 워크플로우 붙여넣고 테스트 실행하기",
+      "tier": 4,
+      "tests": ["clipboard_payload", "canvas_ui"],
+      "prereq": ["n8n Cloud 체험 계정 또는 로컬 n8n"],
+      "steps": [
+        { "site": "https://app.n8n.cloud/", "goalText": "n8n에서 새 빈 워크플로우 만들기" },
+        {
+          "site": "https://app.n8n.cloud/",
+          "goalText": "n8n 워크플로우 편집 화면에 복사한 노드를 붙여넣고 테스트 실행하기",
+          "payload": {
+            "kind": "clipboard",
+            "label": "테스트용 워크플로우 노드",
+            "content": "{\"nodes\":[{\"parameters\":{},\"name\":\"Start\",\"type\":\"n8n-nodes-base.manualTrigger\",\"typeVersion\":1,\"position\":[0,0]},{\"parameters\":{},\"name\":\"Done\",\"type\":\"n8n-nodes-base.noOp\",\"typeVersion\":1,\"position\":[240,0]}],\"connections\":{\"Start\":{\"main\":[[{\"node\":\"Done\",\"type\":\"main\",\"index\":0}]]}}}"
+          }
+        }
+      ],
+      "manualCheck": "실행 기록에 성공한 실행이 1건 있는지"
+    }
+  ]
+}

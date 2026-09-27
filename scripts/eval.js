@@ -89,6 +89,43 @@ function buildSyntheticSignature(procedure) {
   return out;
 }
 
+// ─── step 상세 출력 ───────────────────────────────────────────────────────────
+function printStepDetails(steps) {
+  for (const [i, s] of steps.entries()) {
+    const labels = s.usedLabels;
+    const isArr = Array.isArray(labels);
+    const count = isArr ? labels.length : -1;
+    const labelsStr = isArr
+      ? (labels.length ? labels.map((l) => `"${l}"`).join(", ") : "없음")
+      : "필드누락(검사불가)";
+    const countStr = count >= 0 ? `${count}항목` : "불가";
+    console.log(`      step${i} [검사 ${countStr}] "${s.instruct}" | usedLabels=[${labelsStr}]`);
+  }
+}
+
+// ─── p50 계산 ─────────────────────────────────────────────────────────────────
+function p50(arr) {
+  if (!arr.length) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+// ─── 라벨 따옴표 규약 체크 ────────────────────────────────────────────────────
+// SYSTEM 프롬프트 규칙: 화면 라벨은 따온표('...' 또는 "...")로 감싸야 함.
+// target.text 가 instruct 에 따옴표 없이 노출된 step 수를 센다.
+function checkQuoteConformance(steps) {
+  let total = 0, quoted = 0, violations = [];
+  for (const s of steps ?? []) {
+    const text = s.target?.text;
+    if (!text) continue;
+    total++;
+    const hasQuote = s.instruct?.includes(`'${text}'`) || s.instruct?.includes(`"${text}"`);
+    if (hasQuote) { quoted++; }
+    else { violations.push(text); }
+  }
+  return { total, quoted, violations };
+}
+
 // ─── step 일치 측정 ──────────────────────────────────────────────────────────
 function scoreSteps(expected, generated) {
   if (!generated?.length) return { matchRate: 0, extra: 0, missing: expected.length };
@@ -105,6 +142,114 @@ function scoreSteps(expected, generated) {
     extra: Math.max(0, generated.length - matched),
     missing: expected.length - matched,
   };
+}
+
+// ─── 절차 품질 분석 ───────────────────────────────────────────────────────────
+
+// sig 에서 텍스트 풀을 만든다 (guard 와 동일 방식, 소문자 정규화).
+function buildPool(sig) {
+  const pool = new Set();
+  for (const n of sig ?? []) {
+    if (n.text) pool.add(n.text.toLowerCase().trim());
+    if (n.ariaLabel) pool.add(n.ariaLabel.toLowerCase().trim());
+    for (const l of n.nearLabels ?? []) {
+      const t = l.toLowerCase().trim();
+      if (t) pool.add(t);
+    }
+  }
+  return pool;
+}
+
+function poolContains(pool, text) {
+  if (!text) return false;
+  const t = text.toLowerCase().trim();
+  if (pool.has(t)) return true;
+  for (const p of pool) if (p.includes(t) || t.includes(p)) return true;
+  return false;
+}
+
+// verify 가 시작 시점에 이미 참일 가능성을 판정한다.
+//   true  → 아마도 참 (pre-pass 의심)
+//   false → 아마도 거짓 (정상)
+//   null  → 알 수 없음 (url 등 런타임에만 판정 가능)
+function wouldPassAtStart(verify, pool) {
+  if (!verify) return false;
+  if (verify.is === "urlIncludes") return null; // 실제 URL 없이 판정 불가
+
+  const probe = verify.probe;
+  if (!probe) return false;
+  if (probe.by === "urlIncludes") return null;
+
+  const inSig = poolContains(pool, probe.text);
+
+  switch (verify.is) {
+    case "found":      return inSig;           // 요소가 이미 존재
+    case "notFound":   return !inSig;          // 요소가 처음부터 없음
+    case "textPresent":return inSig;           // 요소가 있고 텍스트도 있을 가능성
+    case "checked":    return null;            // 체크 여부는 모름
+    case "unchecked":  return null;
+    case "valueIn":    return null;
+    default:           return false;
+  }
+}
+
+// target 과 verify.probe 가 같은 텍스트를 참조하는지 (동어반복 verify 탐지).
+// "저장 버튼 클릭 → verify: 저장 버튼이 found" 처럼 행동의 결과를 확인하지 않는 경우.
+function isTautological(step) {
+  const tgtText = step.target?.text?.toLowerCase().trim();
+  const verText = step.verify?.probe?.text?.toLowerCase().trim();
+  if (!tgtText || !verText) return false;
+  if (tgtText !== verText) return false;
+  // 상태 변화를 확인하는 is 는 동어반복이 아니다 (checked/unchecked/valueIn).
+  const is = step.verify?.is ?? "";
+  return ["found", "textPresent", "notFound"].includes(is);
+}
+
+// 생성된 절차 전체를 분석한다.
+function analyzeProc(steps, sig) {
+  if (!steps?.length) return null;
+  const pool = buildPool(sig);
+  const tautIdx = [];
+  const prePassIdx = [];
+
+  for (const [i, s] of steps.entries()) {
+    if (isTautological(s)) tautIdx.push(i);
+    if (wouldPassAtStart(s.verify, pool) === true) prePassIdx.push(i);
+  }
+
+  const lastIdx = steps.length - 1;
+  const lastSuspect = tautIdx.includes(lastIdx) || prePassIdx.includes(lastIdx);
+
+  return { tautIdx, prePassIdx, lastSuspect };
+}
+
+// 분석 결과를 출력한다 (guard 통과 후 호출).
+function printAnalysis(steps, analysis) {
+  if (!analysis) return;
+  const lines = [];
+
+  for (const [i, s] of steps.entries()) {
+    const tags = [];
+    if (analysis.tautIdx.includes(i)) {
+      const v = s.verify?.probe?.text ?? "?";
+      const is = s.verify?.is ?? "?";
+      tags.push(`동어반복(target="${v}", verify.is=${is})`);
+    }
+    if (analysis.prePassIdx.includes(i) && !analysis.tautIdx.includes(i)) {
+      tags.push("시작시점-이미참-의심");
+    }
+    if (tags.length) {
+      lines.push(`      step${i}: ${tags.join(" | ")}`);
+    }
+  }
+
+  if (lines.length || analysis.lastSuspect) {
+    console.log("    ⚠ 절차 분석:");
+    for (const l of lines) console.log(l);
+    if (analysis.lastSuspect) {
+      console.log(`      ★ 마지막 step(${steps.length - 1}) 허위완주 의심`);
+    }
+  }
 }
 
 // ─── 픽스처 로드 ─────────────────────────────────────────────────────────────
@@ -153,33 +298,61 @@ async function main() {
         }
 
         process.stdout.write(`  ${goalLabel} / ${procId} … `);
-        let guardOk = false, matchRate = 0, extra = 0, missing = 0, error = null;
+        let guardOk = false, matchRate = 0, extra = 0, missing = 0, error = null, ms = 0;
+        let analysis = null, quoteConf = null, guardWarnings = [], zeroCheckCount = 0;
 
         try {
+          const t0 = Date.now();
           const res = await resolveLib.resolve(provider, goalLabel, sig);
+          ms = Date.now() - t0;
           if (res?.empty) {
-            console.log("⚠ resolver: steps 없음 (관련 요소 미관측)");
+            console.log(`⚠ resolver: steps 없음 (관련 요소 미관측) [${ms}ms]`);
             guardOk = true;
           } else {
             const gResult = guard(res.procedure, sig);
             guardOk = gResult.ok;
+            guardWarnings = gResult.warnings ?? [];
             if (!guardOk) {
-              console.log("✗ guard 불통과:", gResult.reasons.slice(0, 3));
-            } else {
+              console.log(`✗ guard 불통과 [${ms}ms]:`, gResult.reasons.slice(0, 3));
+            } else if (guardWarnings.length) {
+              process.stdout.write(`  ⚠ guard 경고: ${guardWarnings.join(", ")}\n`);
+            }
+            if (guardOk) {
               const score = scoreSteps(proc.steps, res.procedure.steps);
               matchRate = score.matchRate;
               extra = score.extra;
               missing = score.missing;
+              analysis = analyzeProc(res.procedure.steps, sig);
+              quoteConf = checkQuoteConformance(res.procedure.steps);
+              zeroCheckCount = res.procedure.steps.filter(
+                (s) => Array.isArray(s.usedLabels) && s.usedLabels.length === 0
+              ).length;
+              const quoteStr = quoteConf.total
+                ? `따옴표 ${quoteConf.quoted}/${quoteConf.total}`
+                : "target없음";
               console.log(
-                `✓ guard OK | 일치율 ${(matchRate * 100).toFixed(0)}% | 여분 ${extra} | 누락 ${missing}`
+                `✓ guard OK | 일치율 ${(matchRate * 100).toFixed(0)}% | 여분 ${extra} | 누락 ${missing} | ${quoteStr} [${ms}ms]`
               );
+              if (quoteConf.violations.length) {
+                console.log(`    ⚠ 따옴표 누락: ${quoteConf.violations.map((v) => `'${v}'`).join(", ")}`);
+              }
+              printStepDetails(res.procedure.steps);
+              printAnalysis(res.procedure.steps, analysis);
             }
           }
         } catch (err) {
           error = err.message;
           console.log("✗ 오류:", err.message);
         }
-        results.push({ pack: pack.id, goal: goalLabel, proc: procId, guardOk, matchRate, extra, missing, error });
+        results.push({ pack: pack.id, goal: goalLabel, proc: procId, guardOk, matchRate, extra, missing, error, ms,
+          tautCount: analysis?.tautIdx.length ?? 0,
+          prePassCount: analysis?.prePassIdx.length ?? 0,
+          lastSuspect: analysis?.lastSuspect ?? false,
+          quoteTotal: quoteConf?.total ?? 0,
+          quoteOk: quoteConf?.quoted ?? 0,
+          guardWarnCount: guardWarnings.length,
+          zeroCheckCount,
+        });
       }
     }
   }
@@ -192,8 +365,31 @@ async function main() {
       .filter((r) => typeof r.matchRate === "number")
       .reduce((a, r) => a + r.matchRate, 0) / (results.filter((r) => typeof r.matchRate === "number").length || 1);
 
+    const totalTaut = results.reduce((a, r) => a + (r.tautCount ?? 0), 0);
+    const totalPrePass = results.reduce((a, r) => a + (r.prePassCount ?? 0), 0);
+    const lastSuspectCount = results.filter((r) => r.lastSuspect).length;
+    const msTimes = results.filter((r) => r.ms > 0).map((r) => r.ms);
+    const avgMs = msTimes.reduce((a, v) => a + v, 0) / (msTimes.length || 1);
+    const p50Ms = p50(msTimes);
+
+    const totalQuoteTotal = results.reduce((a, r) => a + (r.quoteTotal ?? 0), 0);
+    const totalQuoteOk = results.reduce((a, r) => a + (r.quoteOk ?? 0), 0);
+    const quoteRateStr = totalQuoteTotal
+      ? `${totalQuoteOk}/${totalQuoteTotal} (${((totalQuoteOk / totalQuoteTotal) * 100).toFixed(0)}%)`
+      : "해당없음";
+
     console.log(`\n━━ 요약 ━━`);
     console.log(`총 ${total}건 | guard 통과율 ${((guardPass / total) * 100).toFixed(0)}% | 평균 step 일치율 ${(avgMatch * 100).toFixed(0)}%`);
+    const totalGuardWarn = results.reduce((a, r) => a + (r.guardWarnCount ?? 0), 0);
+    const totalZeroCheck = results.reduce((a, r) => a + (r.zeroCheckCount ?? 0), 0);
+    console.log(`동어반복 step ${totalTaut}건 | 시작시점-이미참 step ${totalPrePass}건 | 마지막step 허위완주 의심 ${lastSuspectCount}건`);
+    console.log(`guard 경고(동어반복) ${totalGuardWarn}건 | 라벨 따옴표 규약: ${quoteRateStr}`);
+    if (totalZeroCheck > 0) {
+      console.log(`⚠ 검사 항목 0개 step: ${totalZeroCheck}건 — 라벨 없는 step 이거나 usedLabels 누락 의심`);
+    } else {
+      console.log(`검사 항목 0개 step: 0건 ✓`);
+    }
+    console.log(`응답 시간 p50=${p50Ms}ms avg=${avgMs.toFixed(0)}ms`);
     console.log(`Phase A 기준: guard 통과율 100%, 완주율 ≥60%`);
   }
 }

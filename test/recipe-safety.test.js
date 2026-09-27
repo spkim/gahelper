@@ -15,13 +15,14 @@ const SIG_SETTINGS_PAGE = [
 
 describe('Safety — Recipe goal label observed-only', () => {
   it('Recipe goal label이 signature에 없으면 guard가 절차를 폐기한다', () => {
-    const recipe = getRecipe('adsense-setup');
-    const goalLabel = recipe.goals[0].label; // "사이트 등록" — signature에 없음
+    const recipe = getRecipe('R01');
+    const goalLabel = recipe.goals[0].label; // signature에 없는 ChatGPT goal label
 
     const proc = {
       goalLabel,
       steps: [{
         instruct: `'${goalLabel}' 버튼을 클릭하세요.`,
+        usedLabels: [goalLabel],
         target: { by: 'buttonText', text: goalLabel },
         verify: { probe: { by: 'buttonText', text: '저장' }, is: 'found' },
         onFail: null,
@@ -38,6 +39,7 @@ describe('Safety — Recipe goal label observed-only', () => {
       goalLabel: '사이트 설정',
       steps: [{
         instruct: "'저장' 버튼을 눌러 변경사항을 적용하세요.",
+        usedLabels: ['저장'],
         target: { by: 'buttonText', text: '저장' },
         verify: { probe: { by: 'buttonText', text: '저장' }, is: 'found' },
         onFail: null,
@@ -73,12 +75,14 @@ describe('Safety — guard 불통과 절차 전체 폐기', () => {
       steps: [
         {
           instruct: "'저장' 버튼을 누르세요.",
+          usedLabels: ['저장'],
           target: { by: 'buttonText', text: '저장' },
           verify: { probe: { by: 'buttonText', text: '저장' }, is: 'found' },
           onFail: null,
         },
         {
           instruct: "'존재하지않는버튼' 을 클릭하세요.",
+          usedLabels: ['존재하지않는버튼'],
           target: { by: 'buttonText', text: '존재하지않는버튼' },
           verify: { probe: { by: 'buttonText', text: '저장' }, is: 'found' },
           onFail: null,
