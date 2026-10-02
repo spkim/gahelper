@@ -634,30 +634,30 @@ handleGuidanceDone 순서     | clearSession 후 skipped 읽음         | N(순�
 → 4 lanes parallel(A,B,C,D) + 2 sequential 후속(E,F).
 
 ## Implementation Tasks (Eng Review 갱신, 이 목록이 CEO 리뷰의 Tasks를 대체한다)
-- [ ] **T5 (P1, human: ~3h / CC: ~25min)** — `test/helpers/chrome-storage-mock.js`(session·local·onChanged) + 기존 3개 테스트 이전(D6)
+- [ ] **T5 (P1, human: ~3h / CC: ~25min)** — `test/helpers/chrome-storage-mock.js`(session·local·onChanged; JSON 복제, 실제로 읽고 쓰는 `local`) + 기존 3개 테스트 이전(D6). popup 테스트는 참조 저장에서 복제 저장으로 의미가 바뀌므로 이전 후 전체 통과를 확인한다(run 2 정정)
   - Surfaced by: Code Quality #1 — `test/recipe-session.test.js:9-23`
   - Files: `test/helpers/chrome-storage-mock.js`(신규), `test/recipe-session.test.js`, `test/recipe-popup.test.js`, `test/recipe-engine.test.js`
   - Verify: `node --test test/*.test.js` 전체 통과
-- [ ] **T1 (P1, human: ~3h / CC: ~20min)** — `lib/evallog.js` — 코어·스키마: append(idempotent, `sc.evallog`), 실패 카운트, abandoned/rejected, 요약 함수(`summarizeGuidanceSession`, 결정 규칙 계산 포함), 비밀값 제외
-  - Surfaced by: Section 1 #1·#2·#4, D4, E1(CEO)
+- [ ] **T1 (P1, human: ~4h / CC: ~45min)** — `lib/evallog.js` — 코어·스키마: run 기록 `sc.evallog.run.<runId>`(사이드패널만)·관찰자 판정 `sc.evallog.obs.<runId>`(옵션 페이지만) 분리 저장과 화면별 쓰기 대기열(R6=B, run 2), (runId,seq) idempotent, 실패 카운트, abandoned 판정 순수 함수(열린 tabId 목록 입력, 제약 2)/rejected, 이유 코드 추출(제약 3), 요약 함수(`summarizeGuidanceSession`, 결정 규칙 계산 포함), 비밀값 제외, 목록·내보내기·삭제는 접두어 `sc.evallog.` 키만(`sc.settings` 불가침)
+  - Surfaced by: Section 1 #1·#2·#4, D4, E1(CEO), run 2 E6·제약 1~4
   - Files: `lib/evallog.js`(신규), `test/evallog.test.js`(신규; eval-report 계산 테스트 포함, D3)
-  - Verify: `node --test test/evallog.test.js`
-- [ ] **T2 (P1, human: ~1h / CC: ~10min)** — `lib/recipe-engine.js` — `setRecipeEventListener(fn)` 추가, 전이마다 이벤트 전송, listener 예외 격리
-  - Surfaced by: Section 1 #1, D4=A
+  - Verify: `node --test test/evallog.test.js` — 겹치는 N건 append가 모두 남음, 내보내기에 `sc.settings` 불포함, obs 쓰기가 run 키를 바꾸지 않음, 죽은 tabId의 in_progress가 abandoned, 라벨 속 `:`·키 모양 문자열에서 이유 코드만 남음
+- [ ] **T2 (P1, human: ~1h / CC: ~10min)** — `lib/recipe-engine.js` — `setRecipeEventListener(fn)` 추가, 전이마다 이벤트 전송(종료 이벤트에 세션 최종 `status` 포함, 세션이 없으면 무이벤트: 제약 1), listener 예외 격리
+  - Surfaced by: Section 1 #1, D4=A, run 2 제약 1
   - Files: `lib/recipe-engine.js`, `test/recipe-engine.test.js`
-  - Verify: 각 전이에서 이벤트, listener 예외가 세션을 깨지 않음, 미등록 시 무동작
+  - Verify: 각 전이에서 이벤트, 종료 이벤트의 최종 status, 세션 없는 `clearRecipeSession`은 무이벤트, listener 예외가 세션을 깨지 않음, 미등록 시 무동작
 - [ ] **T4 (P1, human: ~4h / CC: ~70min)** — `lib/procedure-generator.js` `resolve()` — `attempts` 반환(D5=B) + `test/procedure-generator.test.js`(D7=A: 빈 응답, 깨진 JSON, 거절, 없는 라벨, attempts 형식)
   - Surfaced by: Code Quality #2, Test Review
-  - Files: `lib/procedure-generator.js`, `sidepanel/panel.js`(호출부는 T3), `test/procedure-generator.test.js`(신규)
-  - Verify: 신규 테스트 + 기존 `test/payload-security.test.js` 통과
-- [ ] **T3 (P1, human: ~4h / CC: ~30min)** — `sidepanel/panel.js`·`panel.html` — 리스너 등록, abandoned 판정, `clearSession` 전 `skippedSteps` 기록, `resolve()` 계측(`resolverMs`, attempts → guardRejects 이유 코드), recipe-done "실제로 됐나요?" UI
+  - Files: `lib/procedure-generator.js`, `sidepanel/panel.js`(호출부는 T3), `scripts/eval.js`(두 번째 호출부, 가산적 변경이라 코드 수정 불필요, 확인만), `test/procedure-generator.test.js`(신규)
+  - Verify: 신규 테스트 + 기존 `test/payload-security.test.js` 통과. `attempts[].reasons` 원문은 evallog의 이유 코드 추출(T1)을 거친 뒤에만 저장
+- [ ] **T3 (P1, human: ~4h / CC: ~30min)** — `sidepanel/panel.js`·`panel.html` — 리스너 등록, abandoned 판정(init에서 `chrome.tabs.query`로 얻은 열린 tabId 목록을 evallog 순수 함수에 넘김, 제약 2), `clearSession` 전 `skippedSteps` 기록, `resolve()` 계측(`resolverMs`, attempts → guardRejects 이유 코드), recipe-done "실제로 됐나요?" UI
   - Surfaced by: Section 1 #2·#3, 정정 사항
   - Files: `sidepanel/panel.js`, `sidepanel/panel.html`
   - Verify: **자동 검증 없음(D8)**. 개발자가 로컬에서 직접 확인(검증 체크리스트는 이번 범위가 아님)
 - [ ] **T6 (P1, human: ~4h / CC: ~30min)** — 옵션 페이지 관찰자 체크시트·내보내기(C1)
   - Files: `options/*`
   - Verify: 저장·재저장·진행 중 run 거부는 evallog 쪽 테스트로, UI는 수동 확인
-- [ ] **T7 (P2, human: ~3h / CC: ~25min)** — `scripts/eval-report.js`(얇은 실행 래퍼) + 가짜 20회 픽스처(T10)
+- [ ] **T7 (P2, human: ~3h / CC: ~25min)** — `scripts/eval-report.js`(얇은 실행 래퍼; 기존 Phase A 하네스 `scripts/eval.js`와 이름·용도 구분) + 가짜 20회 픽스처(T1 스키마 확정 후 포함, run 2에서 T10이 합쳐짐)
   - Files: `scripts/eval-report.js`, `test/fixtures/evallog-20runs.json`
   - Verify: 픽스처 입력의 표가 손계산과 일치
 - [ ] **T8 (P2, human: ~2h / CC: ~15min)** — 레시피 린트 규칙을 `test/recipe-store.test.js`에 추가(site URL 형식, 라벨형 문구, payload 길이, `generic-setup` 예외)(C2, D3)
@@ -672,7 +672,7 @@ handleGuidanceDone 순서     | clearSession 후 skipped 읽음         | N(순�
   - Files: `docs/designs/lesson-recipes.md`
 - [ ] **T13 (P3, human: ~1h / CC: ~10min)** — `docs/spec-v2.md` 아키텍처 도식 낡음 확인
   - Files: `docs/spec-v2.md`
-- 합계(추정): human ~30h / CC ~270분(약 4.5h). 비율은 근거가 약한 추정. 이전 CEO 리뷰의 T8(읽기 전용 확인)은 T4의 테스트로 대체되었다.
+- 합계(추정, run 2 정정): 항목별 합 human ~29h / CC ~260분에 R6(T1 +~1h / +~25분)을 더해 human ~30h / CC ~285분(약 4.75h). 비율은 근거가 약한 추정. 이전 CEO 리뷰의 T8(읽기 전용 확인)은 T4의 테스트로 대체되었다.
 
 ## Suppressed findings (confidence < 5)
 - [P3] (confidence: 4/10) `lib/recipe-engine.js:21-30` `isValidSession`이 새 필드를 허용하는지 확인 안 함. 이벤트 콜백 방식이라 세션 객체를 바꾸지 않아 해당 없음일 가능성이 높다.
@@ -694,19 +694,156 @@ handleGuidanceDone 순서     | clearSession 후 skipped 읽음         | N(순�
 - Parallelization: 6 lanes, 4 parallel / 2 sequential
 - Lake Score: 0/4 (커버리지 점수가 있는 답변 D4·D5·D6·D7 모두 10/10 옵션이 제시되지 않았다)
 
+## Eng Review 재실행 (run 2, 2026-10-02) — Decision ledger
+
+Target: 이 문서(`docs/designs/recipe-registry-ceo-review.md`, 입력 브랜치 `claude/sharp-pasteur-c67a4r` @ `3db87e7`). 사용자가 대상을 직접 지정했다. 이 재실행의 기록은 작업 브랜치 `claude/relaxed-keller-8kuzud`에 저장한다(`sharp-pasteur`에는 쓰지 않음).
+범위 기록: `feature answers: 없음(제안된 기능 컷 없음); structure: Smaller arrangement, 기존 답변 D3 재사용(문서 변경 없음, 계획 동일 커밋); accepted scope: 기능·계약 불변, 린트 규칙은 test/recipe-store.test.js, 결과 계산 테스트는 test/evallog.test.js; pending remedies: R6`.
+이전 실행의 D3~D8 답변은 정확한 선행 승인으로 재사용한다. 이 세션의 질문 번호는 D1부터 다시 시작하므로 아래 `D1 (run 2)`는 위 D1(모드 선택)과 다른 질문이다.
+
+### R6: evallog 동시 쓰기 유실 방지
+Finding: E6 [P1] (confidence: 9/10) `lib/storage.js:20-27`, `lib/recipe-engine.js:101-116`, `sidepanel/panel.js:496-497` — 계획의 `lib/evallog.js`는 `sc.evallog` 한 키에 append한다. `chrome.storage.local`은 get/set이 따로라, 겹치는 쓰기는 마지막 set이 앞선 변경을 덮어쓴다. D4=A의 엔진 이벤트는 `markGoalDone` 안에서 보내고 패널은 곧바로 `recordGoalEnd`를 부르므로 겹치는 쓰기가 실제로 생긴다. 옵션 페이지(관찰자 저장)도 같은 키를 쓴다. 계획의 "async ordering" 시험은 `seq` 단조성만 본다(`recipe-registry-ceo-review.md` Section 4). reviewer: eng-review
+Plan baseline: 한 키 `sc.evallog`, `(runId,seq)` idempotent. 쓰기 직렬화·키 분리는 미정(계획 어디에도 없음, 문서 grep으로 확인).
+Runtime evidence: 실제 Chromium(Playwright 1.56, MV3 확장 서비스 워커)에서 `get → push → set`을 3건 동시에 실행 → 저장 결과 `[3]`(2건 유실). 같은 3건을 promise 체인으로 직렬화 → `[1,2,3]`. 사이드패널과 옵션 페이지 사이의 교차 컨텍스트 덮어쓰기는 같은 원리이나 이 프로브에서 직접 시험하지는 않았다(unknown, 검증: T1 테스트).
+Comparison grid:
+| Commitment | Current (계획) | A 한 키 + 대기열 | B 키 분리 + 대기열 | C 계획 그대로 |
+|---|---|---|---|---|
+| 저장 키 | `sc.evallog` 한 키 | `sc.evallog` 한 키 | `sc.evallog.run.<runId>`(사이드패널만 씀) + `sc.evallog.obs.<runId>`(옵션 페이지만 씀) | `sc.evallog` 한 키 |
+| 같은 화면 안 동시 쓰기 | 직렬화 없음(실측 3건 중 2건 유실) | 대기열로 방지 | 컨텍스트별 대기열로 방지 | 유실 가능 |
+| 사이드패널 ↔ 옵션 페이지 동시 쓰기 | 같은 키 덮어쓰기 가능 | 여전히 가능 | 키마다 쓰는 컨텍스트가 하나라 불가 | 가능 |
+| 내보내기·삭제 범위 | `sc.evallog`만(`sc.settings` 불가침) | 동일 | 접두어 `sc.evallog.`로 시작하는 키만(`sc.settings` 제외 시험 필수) | 동일 |
+| 추가 작업(CC) | — | 대기열 + 동시성 시험 ~10분 | A + 키 배치·목록·내보내기 병합 + 시험 ~25분 | 0 |
+Question D1 (run 2):
+D1 — evallog 동시 쓰기 유실 방지 (R6)
+Project/branch/task: spkim/gahelper, 입력 브랜치 claude/sharp-pasteur-c67a4r (이 세션은 claude/relaxed-keller-8kuzud), T1 lib/evallog.js
+ELI10: 평가 기록은 저장 상자 한 칸(`sc.evallog`)에 "꺼내서, 한 줄 더하고, 다시 넣는" 식으로 쌓입니다. 두 군데가 거의 동시에 이 일을 하면 나중에 넣은 쪽이 먼저 넣은 쪽을 덮어씁니다. 실제 Chromium에서 3건을 동시에 쓰자 1건만 남았습니다. 이 계획은 관찰 20회의 기록으로 B 진행 여부를 정하므로, 조용히 사라진 기록은 결정을 틀어지게 합니다.
+Stakes if we pick wrong: 기록이 침묵 속에 사라져 완주율과 허위 완주 집계가 어긋나고, 그 숫자로 B 진행·중단을 판단하게 됩니다.
+Recommendation: B because 이 계획은 사이드패널(기록)과 옵션 페이지(관찰자 판정) 두 화면이 쓰는데, 화면 안의 대기열(A)은 서로 다른 화면의 쓰기를 막지 못하고 키를 쓰는 화면별로 나누면 서로를 덮어쓸 수 없다.
+Completeness: A=7/10, B=9/10, C=3/10
+Pros / cons:
+A) 한 키 + 쓰기 대기열
+  ✅ evallog 안에 promise 체인 하나만 두면 같은 화면 안의 동시 쓰기 유실이 막힌다 (실측: 같은 3건이 [1,2,3] 모두 남음)
+  ❌ 사이드패널과 옵션 페이지는 별개 실행 환경이라 대기열을 공유하지 못해 관찰자 저장과 새 run 기록이 겹치면 덮어쓴다 (CC: ~10분)
+B) 키 분리 + 쓰기 대기열 (recommended)
+  ✅ 키마다 쓰는 화면이 하나뿐이라 화면 사이 덮어쓰기가 구조적으로 불가능하고, 화면 안은 대기열이 막는다
+  ❌ 목록·내보내기가 접두어 키를 훑어야 하고 API 키가 든 `sc.settings`와 같은 저장소라 접두어 필터와 제외 시험이 필요하다 (CC: ~25분)
+C) 계획 그대로 유지
+  ✅ 추가 작업이 없어 T1 범위가 가장 작다
+  ❌ 실측에서 동시 쓰기 3건 중 2건이 유실됐고, 그 유실은 로그에도 화면에도 나타나지 않는다 (CC: 0분)
+Net: 같은 화면 안만 막고 가볍게 갈지, 키를 화면별로 나눠 화면 사이 덮어쓰기까지 없앨지.
+Header: 쓰기 유실 방지
+Options:
+A) 한 키 + 쓰기 대기열
+`sc.evallog` 한 키를 유지하고 evallog 안에 쓰기 대기열(promise 체인)을 둡니다. 같은 화면 안의 동시 쓰기는 막지만 사이드패널과 옵션 페이지 사이의 덮어쓰기는 막지 못합니다. 대기열·동시 쓰기 시험을 포함합니다.
+B) 키 분리 + 쓰기 대기열 (recommended)
+run 기록은 `sc.evallog.run.<runId>`(사이드패널만 씀), 관찰자 판정은 `sc.evallog.obs.<runId>`(옵션 페이지만 씀)로 나누고, 각 화면 안에는 쓰기 대기열을 둡니다. 목록·내보내기·삭제는 접두어 `sc.evallog.`로 시작하는 키만 다루며 `sc.settings`는 건드리지 않습니다. 동시 쓰기 시험과 "내보내기에 settings 불포함" 시험을 포함합니다.
+C) 계획 그대로 유지
+`sc.evallog` 한 키에 직렬화 없이 append합니다. 추가 작업 없음.
+
+State: approved
+Actual answer: D1 (run 2) = B) 키 분리 + 쓰기 대기열 (권장안 선택)
+Accepted scope: `lib/evallog.js`가 run 기록은 `sc.evallog.run.<runId>`(사이드패널만 씀), 관찰자 판정은 `sc.evallog.obs.<runId>`(옵션 페이지만 씀)에 저장하고, 각 화면(실행 환경) 안의 쓰기는 대기열(promise 체인)로 직렬화한다. 목록·내보내기·삭제는 접두어 `sc.evallog.`로 시작하는 키만 다루며 `sc.settings`는 건드리지 않는다. 필수 증명: 같은 화면 안 동시 쓰기 시험(겹치는 N건이 모두 남음), 내보내기에 `sc.settings` 불포함 시험, 키마다 쓰는 화면이 하나뿐인지 확인하는 시험. 이전 Architecture #4의 "`sc.evallog` 별도 키"는 "접두어 `sc.evallog.`"로 대체된다.
+History: —
+
+### 이전 실행(run 1) 기록의 사실 정정 (결정 불필요, 행동 변경 없음)
+- **chrome 폴리필 3벌은 "같은 모양"이 아니다.** `test/recipe-session.test.js:9-23`와 `test/recipe-engine.test.js:8-26`은 JSON 복제 + 빈 `local`이고 후자만 `if (!globalThis.chrome)` 가드가 있다. `test/recipe-popup.test.js:5-12`는 복제 없이 참조를 저장하고 `local`이 아예 없다. 공통 헬퍼는 JSON 복제와 실제로 읽고 쓰는 `local`로 통일하므로 popup 테스트의 저장 의미가 바뀐다. D6=A의 필수 증명(`node --test test/*.test.js` 전체 통과)이 이를 잡는다.
+- **`resolve()` 호출부는 둘이다.** `sidepanel/panel.js:535` 외에 Phase A 회귀 하네스 `scripts/eval.js:306`도 호출한다. `attempts` 추가는 반환 객체에 필드를 더하는 것이라 `res.empty`·`res.procedure` 소비(`eval.js:307-312`)는 영향이 없다(코드로 확인). 다만 `eval.js` 자체는 테스트가 없다.
+- **Tasks 합계 정정:** 항목별 합은 human 29h / CC 260분이다(이전 기록은 ~30h / ~270분). R6(D1 run 2) 반영 후 human ~30h / CC ~285분.
+- **병렬화 표의 T10(픽스처)은 Tasks에서 T7에 합쳐졌다.** T7의 선행은 "T1(스키마 확정)"이다.
+
+### 코드 대조로 확정한 구현 제약 (승인된 범위의 구체화, 별도 승인 불필요)
+1. **D4 이벤트 형식에 세션 최종 `status`가 필요하다.** 승인된 `{type, tabId, recipeId, goalIdx, ts}`만으로는 종료 이벤트가 완료(`done`)인지 중단(`running`/`blocked`/`paused`)인지 알 수 없다. `startRecipeFlow`는 세션 생성 전에 항상 `clearRecipeSession`을 부르므로(`sidepanel/panel.js:475`), 세션이 없을 때는 이벤트를 보내지 않고, 진행 중 세션이 있을 때는 `abandoned`로 기록한다.
+2. **abandoned 판정은 "활성 세션 없음"만으로 부족하다.** `restoreRecipeSessions`(`lib/recipe-engine.js:33-48`)는 탭이 아직 있는지 확인하지 않고, 탭 제거 리스너(`sidepanel/panel.js:833`)는 사이드패널이 열려 있을 때만 동작한다. 패널이 닫힌 사이에 탭이 닫히면 죽은 `tabId`의 세션이 복구되어 `in_progress` run이 영원히 남고, 완주율 분모에서 조용히 빠진다. 규칙: "`in_progress` run의 `tabId`가 열린 탭 목록(`chrome.tabs.query`)에 없거나 세션이 없으면 `abandoned`". 판정은 열린 `tabId` 목록을 인자로 받는 순수 함수로 evallog에 둔다(단위 시험 가능, 패널은 목록만 넘김).
+3. **`guardRejects`는 이유 코드만 저장한다.** `lib/guard.js:92,100,118,126`의 이유는 `step${i}:unobserved_label:${label}`처럼 화면 텍스트를 포함하고 라벨 안에 `:`가 있을 수 있어 `split(':')`는 안전하지 않다. 알려진 코드 목록(`not_object`, `no_verify`, `no_usedLabels`, `unobserved_label`, `quoted_not_in_usedLabels`, `bad_locator`, `css_locator`, `unobserved_locator`, `unobserved`, `json_parse_error`)에 대한 접두 매칭으로 코드를 뽑고, 매칭되지 않으면 `unknown`으로 저장한다. D5=B의 `attempts[].reasons` 원문은 evallog에 들어가기 전에 이 함수를 거친다.
+4. **R6=B의 데이터 모델:** 사이드패널은 run 기록(`userConfirmedReal`, 상태 전이, goal 기록)만, 옵션 페이지는 관찰자 판정(`observerVerified`, 체크시트)만 쓴다. `verified` 상태는 저장하지 않고 두 키를 `runId`로 조인해 파생한다. 목록은 `chrome.storage.local.get(null)` 후 접두어로 걸러야 하고(접두어 조회 API 없음), 걸러낸 결과 외에는 직렬화·내보내기하지 않는다(`sc.settings`에 API 키가 있음).
+
+### Eng Review 재실행 결과 (run 2)
+
+**Step 0: Scope Challenge — scope accepted as-is.** 이미 해결된 것(재사용)은 run 1 목록과 같다. 복잡도 게이트(8개 이상 파일)는 D3 답변을 재사용했다(계획 커밋 `3db87e7` 동일). 새 아키텍처 패턴은 쓰기 직렬화뿐이며 플랫폼 동작을 실제 Chromium에서 시험했다(위 R6). TODOS.md의 H4·주입 내성·jsdom 항목은 이 계획을 막지 않는다.
+
+**재검증 (run 1 주장 대 현재 코드, 변경 없음):** `node --test test/*.test.js` 254개 통과; `clearRecipeSession` 호출 7곳(`panel.js:243,384,396,408,422,475,842`); `resolve()`를 호출하는 테스트 0개; `tpl-recipe-done`에 확인 질문 없음(`panel.html:181-189`); 세션 키는 `tabId`(`recipe-engine.js:13,64`); `sc.settings`에 API 키(`lib/storage.js:1,22-27`); `lib/recipe-store.js:1` 주석만 `recipes-mvp.json`을 언급; 레지스트리 11개(`test/recipe-store.test.js:30-31`); `panel.js` 876줄.
+
+**1. Architecture (3 issues, 신규)**
+1. [P1] (9/10) `lib/storage.js:20-27`, `sidepanel/panel.js:496-497` — 한 키 append의 동시 쓰기 유실. 실측 3건 중 2건 유실. → **R6 / D1 run 2 = B**.
+2. [P2] (9/10) `lib/recipe-engine.js:33-48`, `sidepanel/panel.js:833` — 죽은 탭 세션 때문에 abandoned가 판정되지 않음. → 제약 2.
+3. [P2] (9/10) `sidepanel/panel.js:475` — 세션 생성 전 무조건 `clearRecipeSession`, 이벤트에 최종 status 필요. → 제약 1.
+
+**2. Code Quality (3 issues, 신규)**
+1. [P2] (9/10) `test/recipe-popup.test.js:5-12` — 폴리필 의미 차이(위 정정). D6 범위 안.
+2. [P3] (9/10) `scripts/eval.js:306` — `resolve()`의 두 번째 호출부. 가산적 변경이라 안전.
+3. [P2] (9/10) `lib/guard.js:92,100,118,126` — 이유 문자열에 화면 텍스트와 `:`가 들어 이유 코드 추출이 `split`으로는 깨짐. → 제약 3.
+- 공유 코드 평가: 새 추출 후보 없음. 대기열은 evallog 안에서 사용(호출자 2곳: 사이드패널, 옵션 페이지, 공유 모듈 `lib/evallog.js`).
+
+**3. Test Review — 신규 GAP (모두 승인된 범위의 필수 증명으로 닫힘)**
+```
+CODE PATHS (run 2 추가분)                                  USER FLOWS
+[+] lib/evallog.js 쓰기 경로 (R6)                            [+] 관찰 세션
+  ├── 같은 화면 안 겹치는 N건 append                           ├── [GAP→계획] 이벤트 훅 + 패널 계측이 겹쳐도 기록 보존
+  │   └── [GAP→계획 ★★★] 모두 남음, (runId,seq) 순서             └── [GAP→계획] 패널 닫힌 사이 탭 닫힘 → 다음 init에서 abandoned
+  ├── 내보내기·삭제가 sc.settings 불포함                      [+] 관찰자
+  │   └── [GAP→계획 ★★★] settings가 있어도 접두어 키만            └── [GAP→계획] 체크시트 저장이 run 기록 키를 건드리지 않음
+  ├── run/obs 키의 단일 쓰기 화면                           
+  │   └── [GAP→계획] obs 쓰기가 run 키를 변경하지 않음
+  ├── abandoned 판정(순수 함수, 열린 tabId 목록 입력)
+  │   └── [GAP→계획 ★★★] 죽은 tabId, 세션 없음, 정상 진행 구분
+  └── 이유 코드 추출
+      └── [GAP→계획 ★★★] 라벨 속 ':'·키 모양 문자열, 알 수 없는 코드
+[+] lib/recipe-engine.js 이벤트: [GAP→계획] 종료 이벤트의 최종 status, 세션 없을 때 무이벤트
+[+] sidepanel/panel.js: [GAP] 호출 순서·연결 자동 검증 없음 (D8=A, 변경 없음) ★ CRITICAL
+COVERAGE: 신규 경로 중 현재 보호되는 것 0 (전부 계획 상태, 승인된 시험 구현 시 ★★★ 목표)
+QUALITY: 계획 중 ★★★ 5, 그 외 2  |  GAPS: 7 (계획으로 닫힘 6, 승인 없음 1 = panel.js)
+```
+- 값 카드(신규): `Value: protects=겹치는 append가 모두 남음; fails_when=대기열 제거 또는 키 합침; why_new=evallog 자체가 신규, 기존 테스트 없음; seam=none` / `Value: protects=내보내기·삭제가 sc.settings를 건드리지 않음; fails_when=접두어 필터 누락; why_new=API 키가 든 키와 같은 저장소; seam=none` / `Value: protects=죽은 탭의 in_progress run이 abandoned가 됨; fails_when=활성 세션 유무만으로 판정; why_new=이 규칙이 신규; seam=none(열린 tabId 목록을 인자로 받음)` / `Value: protects=이유 코드만 저장, 화면 텍스트·비밀값 모양은 제거; fails_when=split(':')로 되돌아감; why_new=이유 문자열 파서가 신규; seam=none`.
+- Tests made obsolete by this plan: 없음. LLM/eval: 프롬프트를 바꾸지 않아 해당 없음. Regression Iron Rule: 기존 `recipe-engine`·`recipe-session`·`recipe-popup` 테스트가 D6 이전 후에도 통과해야 한다(D6 필수 증명, 승인됨).
+
+**4. Performance (0 issues).** `get(null)`은 `sc.settings`를 포함한 전체 키를 읽지만 키 수는 run당 2개씩 20~30 run으로 수십 개, 수 KB다. 쓰기는 전이마다 한 번. No issues found.
+
+**Outside Voice.** unavailable. 사전 점검 결과 `CODEX_MODE: not_installed`(Codex CLI 없음)이고, 네이티브 대체 경로에 필요한 `TaskOutput`이 이 세션에 없다(`TaskStop`만 로드됨). 완료된 외부 리뷰는 없다. 같은 하네스의 서브에이전트는 외부 커버리지가 아니다.
+
+**TODOS.md updates.** 새 항목 0건 제안(기존 H4, 주입 내성, jsdom은 그대로).
+
+**Failure modes (run 2 추가).**
+```
+CODEPATH                 | FAILURE MODE                       | RESCUED?        | TEST?   | USER SEES?        | LOGGED?
+-------------------------|------------------------------------|-----------------|---------|-------------------|--------
+evallog 동시 쓰기         | 겹치는 get→set이 서로 덮어씀        | Y(R6=B, 계획)    | 계획    | 없음(유실 방지)    | Y
+abandoned 판정            | 패널 닫힌 사이 탭 닫힘              | Y(제약 2, 계획)  | 계획    | 체크시트 abandoned | Y
+이유 코드 추출            | 라벨 속 ':'로 코드가 깨짐           | Y(제약 3, 계획)  | 계획    | 없음              | Y
+panel 호출 순서·연결       | clearSession 후 skipped 읽음 등     | N               | N(D8)   | 침묵              | N
+```
+- **CRITICAL GAP 1건은 그대로(panel.js 호출 순서, D8).** 순수 함수로 계산 로직은 보호하지만 호출 순서는 자동·수동 검증이 없다. D8 답변은 바꾸지 않았다(새 증거가 같은 부류의 위험이고, 사용자가 이미 정한 사항).
+
+**Implementation Tasks 변경(run 2).** 아래 Tasks 목록의 T1·T2·T3·T4·T5·T7을 제자리에서 갱신했다(R6, 제약 1~4, 정정 반영).
+
+**Approval readiness (run 2): PASS** — R6는 `D1 (run 2) = B`, 재사용 승인은 D3~D8(run 1 답변 참조). 위 제약 1~4는 승인된 D4·D5·R6·E1(abandoned) 범위의 구체화이며 새 정책이 아니다.
+
+## Completion Summary (Eng Review run 2)
+- Step 0: Scope Challenge — scope accepted as-is (D3 재사용)
+- Architecture Review: 3 issues found
+- Code Quality Review: 3 issues found
+- Test Review: diagram produced, 6 new gaps identified (모두 승인된 범위의 시험으로 닫힘) + 1 carried (panel.js, D8)
+- Performance Review: 0 issues found
+- NOT in scope: run 1 목록 그대로 (변경 없음)
+- What already exists: run 1 목록 그대로, 추가로 `scripts/eval.js`(Phase A 회귀 하네스, `resolve()` 호출부)
+- TODOS.md updates: 0 items proposed
+- Failure modes: 1 critical gap flagged (carried: panel.js 호출 순서)
+- Unresolved decisions: 1 in this review (D8 보류, 이월)
+- Outside voice: codex — unavailable (Codex CLI 미설치, 네이티브 대체에 필요한 TaskOutput 없음)
+- Parallelization: run 1 표 그대로 (T10은 T7에 합쳐짐), 4 lanes parallel / 2 sequential
+- Lake Score: 0/1 (커버리지 점수가 있는 답변 D1 run 2의 선택 B는 9/10이었다)
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | 4 proposals, 3 accepted, 1 deferred |
-| Outside Review | `/plan-ceo-review`, `/plan-eng-review` Outside Voice | Independent 2nd opinion | 2 | unavailable | no completed external review |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 10 issues, 1 critical gap |
+| Outside Review | `/plan-ceo-review`, `/plan-eng-review` Outside Voice | Independent 2nd opinion | 3 | unavailable | no completed external review |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 2 | ISSUES OPEN | run 2: 12 issues, 1 critical gap |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
-- **OUTSIDE COVERAGE:** codex/native, phase plan-review(CEO와 Eng 각 1회), **unavailable**(TaskOutput/TaskStop 미제공, Codex 미설치). 완료된 외부 리뷰 없음. 같은 하네스 서브에이전트 리뷰(CEO 계획 3라운드 8/10, 입력 설계 2라운드 8/10)는 outside coverage가 아니다.
-- **VERDICT:** CLEARED한 리뷰 없음. Eng Review가 ISSUES OPEN이므로 eng review required(미해결 1건 해소 또는 승인 후 재실행).
+- **OUTSIDE COVERAGE:** codex, phase plan-review(CEO 1회, Eng 2회), **unavailable**. 이번 점검에서 Codex CLI 미설치(`CODEX_MODE: not_installed`)이고 네이티브 대체에 필요한 `TaskOutput`이 이 세션에 없다. 완료된 외부 리뷰 없음. 같은 하네스 서브에이전트 리뷰(CEO 계획 3라운드 8/10, 입력 설계 2라운드 8/10)는 outside coverage가 아니다.
+- **VERDICT:** CLEARED한 리뷰 없음. Eng Review가 ISSUES OPEN이므로 eng review required(D8 보류 해소 또는 승인 후 재실행). 이전 실행 기록(CEO 1회, Eng 1회, Outside 2회)은 이 환경의 리뷰 로그에 없고 이 문서에서 가져온 값이다.
 
 **UNRESOLVED DECISIONS:**
-- D8 보류: `sidepanel/panel.js` 변경(훅 등록, `handleGuidanceDone`의 `skipped` 읽기 순서, recipe-done 질문, resolve 계측)에 관찰 시작 전 자동·수동 검증이 없다. TODOS.md에 jsdom 환경으로 보류, Failure modes의 CRITICAL GAP 1건.
+- D8 보류(run 1에서 이월): `sidepanel/panel.js` 변경(훅 등록, `handleGuidanceDone`의 `skipped` 읽기 순서, recipe-done 질문, resolve 계측)에 관찰 시작 전 자동·수동 검증이 없다. TODOS.md에 jsdom 환경으로 보류, Failure modes의 CRITICAL GAP 1건.
 - + 1 unresolved from prior reviews
