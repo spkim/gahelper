@@ -25,3 +25,4 @@ coverage/
 
 # postgres data (if bind-mounted)
 pgdata/
+.claude/skills/gstack/
