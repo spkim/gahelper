@@ -12,7 +12,7 @@ gadgetarms 레시피 등록 + gahelper 실행 연동은 **지금 짓지 말고**
 - 이 계획의 결정(D1, D13, D15~D22)은 모두 사용자 응답으로 승인됐고 Approval readiness는 PASS다.
 - **그러나 입력 설계 문서의 독립 리뷰 지적 10건(Reviewer Concerns)은 본문 수정 후 재검토를 받지 못했다.** 이 계획의 결정이 아니라 입력의 열린 항목이다.
 - 이 계획에 대한 독립 리뷰(1회)는 6/10, FAIL이었고, 코드로 확인된 지적을 반영해 아래를 수정했다(아래 "Spec review 기록").
-- Outside Voice(다른 AI 시스템의 독립 도전)는 **실행되지 않았다**(unavailable). 이 문서의 어떤 항목도 외부 모델의 동의를 받지 않았다.
+- Outside Voice(다른 AI 시스템의 독립 도전)는 **이 섹션 작성 당시 실행되지 않았다**(unavailable). 이 문서의 CEO 리뷰 항목은 외부 모델의 동의를 받지 않았다. (이후 eng review run 3에서 Codex Outside Voice가 완료되어 아래 "Eng Review 재실행 (run 3)" 섹션이 그 발견 10건을 다뤘다.)
 
 ### ID 대응표 (CEO 요약의 번호 ↔ 이 문서의 ID)
 | CEO 요약 # | 이 문서 ID | 처분 |
@@ -110,7 +110,7 @@ gadgetarms 레시피 등록 + gahelper 실행 연동은 **지금 짓지 말고**
 |---|---|---|---|
 | recipe-done 예/아니오 | 더블클릭, 패널 닫았다 열기 | 계획 | (runId,seq) idempotent |
 | 실행 중 브라우저 재시작 | storage.session 소멸 | 계획 | `abandoned` |
-| 실행 중 내보내기 | 진행 중 run | 계획 | in_progress 표기, 완주율 분모 제외 |
+| 실행 중 내보내기 | 진행 중 run | 계획 | ~~in_progress 표기, 완주율 분모 제외~~ → **run 3(R13)으로 대체**: 계획 run 명단 중 `in_progress`나 기록 없음이 하나라도 있으면 판정 "불완전(INCOMPLETE)" |
 | 같은 레시피 재실행 | 덮어씀 | 계획 | runId |
 | 참가자가 체크시트를 봄 | 응답 오염 | 운영 규칙 | 옵션 페이지는 관찰자만 열고, 체크리스트에 "관찰 중 코드 수정 없음" 항목 포함 |
 - **Async ordering:** 한 run의 쓰기는 사이드패널(세션 소유자) 한 곳에서만 한다. 회귀 테스트는 두 `append` 사이에 지연을 끼워 (A→B), (B→A) 완료 순서에서 `seq` 단조성을 확인한다.
@@ -218,7 +218,7 @@ evallog가 관측 수단. E3로 결과표 자동 계산. 확장 버전·커밋�
  불가능한 전이: completed 이전에 observerVerified 설정, abandoned/rejected에서 재개
 ```
 4. Error flow: Section 2.
-5. Deployment sequence: 코드 수정 → 개발자 모드 재로드 → 계정·프로필 준비 → 관찰 세션 → 정리(키 제거·삭제) → 내보내기 → `eval-report`.
+5. Deployment sequence: 코드 수정 → 개발자 모드 재로드 → 계정·프로필 준비 → 관찰 세션 → 내보내기 파일 저장·기록 수 확인 → `eval-report` → 정리(키 제거·삭제, 진행 중 세션 정리; `sc.evallog.*`는 최종 보고서 확인 후 한 번 삭제, R18). (run 3 F9 정정: 이전에는 "정리 → 내보내기"여서 기록이 보고 전에 지워졌다.)
 6. Rollback: 이전 커밋 체크아웃 → 확장 재로드. 로그는 `schemaVersion`으로 구분.
 
 ## Stale Diagram Audit
@@ -616,32 +616,33 @@ handleGuidanceDone 순서     | clearSession 후 skipped 읽음         | N(순�
 - recipe-done 질문 저장 실패도 무검증이나 침묵 영향은 `userConfirmedReal` 누락(참가자 응답은 observer 체크시트가 별도로 받음)이라 critical로 세지 않는다.
 
 ## Worktree parallelization strategy
+(run 3 갱신: 측정 계약 확정 단계 L0 추가, T7→T10 잔존 의존 제거(T10은 run 2에서 T7에 합쳐짐), T11을 독립 문서에서 L0로 승격)
 | Step | Modules touched | Depends on |
 |---|---|---|
+| L0 측정 계약 확정: T11 관찰 프로토콜·체크리스트 + 이벤트·식별 계약(엔진 이벤트 형식, evallog가 부여하는 `runId`/`seq`, 종결 결과 목록, 계획 run 명단) | docs/ | — (`runner-first.md` 규칙 변경은 이 리뷰에서 작업 트리에 반영됨) |
 | T5 chrome 목 + 기존 3개 테스트 이전 | test/ | — |
 | T4 resolve attempts + 테스트 | lib/, test/ | — |
-| T1 evallog 코어·스키마 | lib/, test/ | T5 |
-| T2 엔진 콜백 | lib/, test/ | T5 |
+| T1 evallog 코어·스키마·락 | lib/, test/ | T5, L0 |
+| T2 엔진 콜백 | lib/, test/ | T5, L0 |
 | T8·T9 린트 규칙, recipes-mvp.json 삭제 | lib/, recipes/, docs/, test/ | — |
-| T11·T12·T13 문서 | docs/ | — |
+| T12·T13 문서 | docs/ | — |
 | T3 panel 훅·질문·계측 | sidepanel/ | T1, T2, T4 |
-| T6 옵션 체크시트 | options/ | T1 |
-| T7 eval-report + 요약 함수 | scripts/, lib/, test/ | T1, T10 |
-| T10 픽스처 | test/ | T1 스키마 확정 |
-**Parallel lanes:** Lane A: T5 → T1 → T2 (lib/ + test/ 공유 → 순차). Lane B: T4 (procedure-generator, 독립). Lane C: T8 → T9 (recipe-store 계열). Lane D: T11·T12·T13 (docs/, 독립). 이후 Lane E: T3 (A·B 합류 후), Lane F: T6, T7 (T1 후).
-**Execution order:** A + B + C + D 동시 시작 → A·B 병합 후 E, A 병합 후 F → 마지막에 전체 `node --test test/*.test.js`.
-**Conflict flags:** `test/`는 T5·T1·T2·T4·T7·T8이 모두 건드리므로 같은 파일(예: `test/recipe-engine.test.js`는 T5와 T2)은 순차. `sidepanel/panel.js`는 T3만.
-→ 4 lanes parallel(A,B,C,D) + 2 sequential 후속(E,F).
+| T6 옵션 체크시트 | options/ | T1, L0 |
+| T7 eval-report + 계획 run 명단 + 픽스처 | scripts/, lib/, test/ | T1, L0 |
+**Parallel lanes:** Lane 0: L0 (docs/, 가장 먼저). Lane A: T5 → T1 → T2 (lib/ + test/ 공유 → 순차, T1·T2는 L0 후). Lane B: T4 (procedure-generator, 독립). Lane C: T8 → T9 (recipe-store 계열). Lane D: T12·T13 (docs/, 독립). 이후 Lane E: T3 (A·B 합류 후), Lane F: T6, T7 (T1 후).
+**Execution order:** L0 + T5 + B + C + D 동시 시작 → L0·T5 완료 후 A의 T1·T2 → A·B 병합 후 E, A 병합 후 F → 마지막에 전체 `node --test test/*.test.js`.
+**Conflict flags:** `test/`는 T5·T1·T2·T4·T7·T8이 모두 건드리므로 같은 파일(예: `test/recipe-engine.test.js`는 T5와 T2)은 순차. `sidepanel/panel.js`는 T3만. `docs/`는 L0(T11)와 T12·T13이 다른 파일이라 병렬 가능하나 `docs/spec-v2-addendum-recipe-mvp.md`는 T9만.
+→ 5 lanes parallel(0,A,B,C,D) + 2 sequential 후속(E,F).
 
 ## Implementation Tasks (Eng Review 갱신, 이 목록이 CEO 리뷰의 Tasks를 대체한다)
 - [ ] **T5 (P1, human: ~3h / CC: ~25min)** — `test/helpers/chrome-storage-mock.js`(session·local·onChanged; JSON 복제, 실제로 읽고 쓰는 `local`) + 기존 3개 테스트 이전(D6). popup 테스트는 참조 저장에서 복제 저장으로 의미가 바뀌므로 이전 후 전체 통과를 확인한다(run 2 정정)
   - Surfaced by: Code Quality #1 — `test/recipe-session.test.js:9-23`
   - Files: `test/helpers/chrome-storage-mock.js`(신규), `test/recipe-session.test.js`, `test/recipe-popup.test.js`, `test/recipe-engine.test.js`
   - Verify: `node --test test/*.test.js` 전체 통과
-- [ ] **T1 (P1, human: ~4h / CC: ~45min)** — `lib/evallog.js` — 코어·스키마: run 기록 `sc.evallog.run.<runId>`(사이드패널만)·관찰자 판정 `sc.evallog.obs.<runId>`(옵션 페이지만) 분리 저장과 화면별 쓰기 대기열(R6=B, run 2), (runId,seq) idempotent, 실패 카운트, abandoned 판정 순수 함수(열린 tabId 목록 입력, 제약 2)/rejected, 이유 코드 추출(제약 3), 요약 함수(`summarizeGuidanceSession`, 결정 규칙 계산 포함), 비밀값 제외, 목록·내보내기·삭제는 접두어 `sc.evallog.` 키만(`sc.settings` 불가침)
-  - Surfaced by: Section 1 #1·#2·#4, D4, E1(CEO), run 2 E6·제약 1~4
+- [ ] **T1 (P1, human: ~5h / CC: ~60min)** — `lib/evallog.js` — 코어·스키마: run 기록 `sc.evallog.run.<runId>`(사이드패널만)·관찰자 판정 `sc.evallog.obs.<runId>`(옵션 페이지만) 분리 저장, **모든 `get→set`을 락 `sc.evallog`(`navigator.locks`) 안에서 실행하고 없으면 화면별 promise 대기열로 폴백, `seq`는 락 안에서 읽은 최대값에서 부여(R12, run 3)**, (runId,seq) idempotent, 실패 카운트, abandoned 판정 순수 함수(열린 tabId 목록 입력, 제약 2)/rejected, 이유 코드 추출(제약 3), 요약 함수(`summarizeGuidanceSession`, 결정 규칙 계산 포함), **`recordSkip`(수동 진행 즉시 기록, run 3 제약 1), `tabId→runId` 매핑 `sc.evallog.active`(storage.session, 제약 2), `classifyProcedure`(`nav_only`/`action`/`mixed`, R11)**, 종결 결과 `completed`/`abandoned`/`rejected`/`crashOrHang`와 효과 상태 규칙(`obs.finalOutcome ?? run.status`, 종결은 `in_progress`에만·비가역, 종결 뒤 러너 이벤트는 `postFinalizeEvents`로만 집계, 제약 10), 모든 run 기록의 `evalRound`(제약 13), 비밀값 제외, 목록·내보내기·삭제는 접두어 `sc.evallog.` 키만(`sc.settings` 불가침)
+  - Surfaced by: Section 1 #1·#2·#4, D4, E1(CEO), run 2 E6·제약 1~4, run 3 F3·F4·F5·R11·R12
   - Files: `lib/evallog.js`(신규), `test/evallog.test.js`(신규; eval-report 계산 테스트 포함, D3)
-  - Verify: `node --test test/evallog.test.js` — 겹치는 N건 append가 모두 남음, 내보내기에 `sc.settings` 불포함, obs 쓰기가 run 키를 바꾸지 않음, 죽은 tabId의 in_progress가 abandoned, 라벨 속 `:`·키 모양 문자열에서 이유 코드만 남음
+  - Verify: `node --test test/evallog.test.js` — 겹치는 N건 append가 모두 남음, 락 안 읽기-수정-쓰기와 폴백, 두 락 사용자(가짜 `navigator.locks`) 직렬화, 내보내기에 `sc.settings` 불포함, obs 쓰기가 run 키를 바꾸지 않음, 죽은 tabId의 in_progress가 abandoned, 라벨 속 `:`·키 모양 문자열에서 이유 코드만 남음, `classifyProcedure` 4행(`nav_only`/`action`/`mixed`/빈 steps), `recordSkip` 후 패널 재오픈에서 skip 유지. 수동 1회: 확장을 로드해 사이드패널과 옵션 페이지에서 동시 append 후 유실 없음(사이드패널↔서비스 워커는 미검증, R12 한계)
 - [ ] **T2 (P1, human: ~1h / CC: ~10min)** — `lib/recipe-engine.js` — `setRecipeEventListener(fn)` 추가, 전이마다 이벤트 전송(종료 이벤트에 세션 최종 `status` 포함, 세션이 없으면 무이벤트: 제약 1), listener 예외 격리
   - Surfaced by: Section 1 #1, D4=A, run 2 제약 1
   - Files: `lib/recipe-engine.js`, `test/recipe-engine.test.js`
@@ -650,29 +651,30 @@ handleGuidanceDone 순서     | clearSession 후 skipped 읽음         | N(순�
   - Surfaced by: Code Quality #2, Test Review
   - Files: `lib/procedure-generator.js`, `sidepanel/panel.js`(호출부는 T3), `scripts/eval.js`(두 번째 호출부, 가산적 변경이라 코드 수정 불필요, 확인만), `test/procedure-generator.test.js`(신규)
   - Verify: 신규 테스트 + 기존 `test/payload-security.test.js` 통과. `attempts[].reasons` 원문은 evallog의 이유 코드 추출(T1)을 거친 뒤에만 저장
-- [ ] **T3 (P1, human: ~4h / CC: ~30min)** — `sidepanel/panel.js`·`panel.html` — 리스너 등록, abandoned 판정(init에서 `chrome.tabs.query`로 얻은 열린 tabId 목록을 evallog 순수 함수에 넘김, 제약 2), `clearSession` 전 `skippedSteps` 기록, `resolve()` 계측(`resolverMs`, attempts → guardRejects 이유 코드), recipe-done "실제로 됐나요?" UI
-  - Surfaced by: Section 1 #2·#3, 정정 사항
+- [ ] **T3 (P1, human: ~4.5h / CC: ~35min)** — `sidepanel/panel.js`·`panel.html` — 리스너 등록, abandoned 판정(init에서 `chrome.tabs.query`로 얻은 열린 tabId 목록을 evallog 순수 함수에 넘김, 제약 2), **수동 진행 호출부(`panel.js:373-379`의 `manualAdvance` 직후)에서 `recordSkip`을 즉시 호출(run 3 제약 1; goal 종료 시점 `clearSession` 전 읽기는 쓰지 않음)**, `resolve()` 계측(`resolverMs`, attempts → guardRejects 이유 코드, **`procedureKind`**), recipe-done "실제로 됐나요?" UI
+  - Surfaced by: Section 1 #2·#3, 정정 사항, run 3 F5·R11
   - Files: `sidepanel/panel.js`, `sidepanel/panel.html`
   - Verify: **자동 검증 없음(D8)**. 개발자가 로컬에서 직접 확인(검증 체크리스트는 이번 범위가 아님)
-- [ ] **T6 (P1, human: ~4h / CC: ~30min)** — 옵션 페이지 관찰자 체크시트·내보내기(C1)
+- [ ] **T6 (P1, human: ~5h / CC: ~40min)** — 옵션 페이지 관찰자 체크시트·내보내기(C1, D9 = 옵션 페이지 UI 유지). run 3 추가: **관찰자 종결 동작(`in_progress` run을 `abandoned`/`crashOrHang`으로 종결, R13; 종결은 `sc.evallog.obs.<runId>`에만 씀), 참가자 요약("코딩된 회차 n/2", R9), Q3 명칭 "혼자 할 수 있음"(R10), "관측되지 않은 라벨" 코딩을 안내 문구 다섯 곳(instruct, goalLabel, recoverText, 신뢰 배지, step.onFail)별로(제약 3·11), 종결은 `in_progress`에만 허용하고 되돌릴 수 없음(제약 10), `evalRound` 설정(제약 13), 모든 쓰기는 R12 락 사용**
   - Files: `options/*`
-  - Verify: 저장·재저장·진행 중 run 거부는 evallog 쪽 테스트로, UI는 수동 확인
-- [ ] **T7 (P2, human: ~3h / CC: ~25min)** — `scripts/eval-report.js`(얇은 실행 래퍼; 기존 Phase A 하네스 `scripts/eval.js`와 이름·용도 구분) + 가짜 20회 픽스처(T1 스키마 확정 후 포함, run 2에서 T10이 합쳐짐)
-  - Files: `scripts/eval-report.js`, `test/fixtures/evallog-20runs.json`
-  - Verify: 픽스처 입력의 표가 손계산과 일치
+  - Verify: 저장·재저장·진행 중 run 거부·종결 동작이 run 키를 바꾸지 않음은 evallog 쪽 테스트로, UI는 수동 확인
+- [ ] **T7 (P2, human: ~5h / CC: ~45min)** — `scripts/eval-report.js`(얇은 실행 래퍼; 기존 Phase A 하네스 `scripts/eval.js`와 이름·용도 구분) + 가짜 20회 픽스처(T1 스키마 확정 후 포함, run 2에서 T10이 합쳐짐). run 3 추가: **각 비율의 95% 구간(정확 이항)과 nondev 하위 합계를 보고만(R7 = A, 게이트 아님), 피벗 우선 판정(R8), 참가자 단위 "두 회차 모두 충족"과 "코딩된 회차 n/2"(R9), Q3 명칭(R10), `nav_only` goal과 허위 완주 겹침 보고(R11), 계획 run 명단 대조와 `INCOMPLETE` 판정(R13), 효과 상태 `obs.finalOutcome ?? run.status`와 `postFinalizeEvents` 표시(제약 10), 라운드별(`evalRound`) 명단 대조·판정(제약 13), 입력은 마지막 내보내기 하나(R18)**
+  - Files: `scripts/eval-report.js`, `test/fixtures/evallog-20runs.json`, `test/fixtures/planned-runs.json`(R13 명단, 라운드별)
+  - Verify: 픽스처 입력의 표가 손계산과 일치. 추가 시험: 구간 값 3개(8/16, 3/5, 4/5), 피벗형 4명 + 나머지 B 조건 참 → 피벗, 두 회차 일치·불일치·결측, 명단 누락·`in_progress` 잔존 → `INCOMPLETE`, `INCOMPLETE`에서는 B 진행도 피벗도 내지 않음
 - [ ] **T8 (P2, human: ~2h / CC: ~15min)** — 레시피 린트 규칙을 `test/recipe-store.test.js`에 추가(site URL 형식, 라벨형 문구, payload 길이, `generic-setup` 예외)(C2, D3)
   - Files: `test/recipe-store.test.js`
   - Verify: 11개 레지스트리 통과 + 규칙별 음성 케이스 실패
 - [ ] **T9 (P3, human: ~1h / CC: ~5min)** — `recipes/recipes-mvp.json` 삭제, `lib/recipe-store.js:1` 주석과 부록 R4.1 갱신(E2)
   - Files: `recipes/recipes-mvp.json`, `lib/recipe-store.js`, `docs/spec-v2-addendum-recipe-mvp.md`
   - Verify: `grep -rn "recipes-mvp" lib sidepanel background options test`가 0건
-- [ ] **T11 (P3, human: ~1h / CC: ~10min)** — 관찰 운영 체크리스트 문서(계정·프로필·동의·정리·"관찰 중 코드 수정 없음")(C1)
+- [ ] **T11 / L0 (P1, human: ~2h / CC: ~15min)** — 관찰 운영 체크리스트 문서(계정·프로필·동의·정리·"관찰 중 코드 수정 없음")(C1). run 3: **L0로 승격(T1·T2·T6·T7보다 먼저)**, 항목 추가: 깨끗한 프로필 시작과 사전 확인, 레시피별 시작 URL 사전 오픈, 권한 대화상자 설명, 창 1개·사이드패널 1개, 코딩 기준 사전 고정과 원문 먼저 기록, 안내 문구 네 곳 감사, `crashOrHang` 종결 절차, 내보내기 확인 후 정리와 `sc.evallog.*`는 최종 보고서 확인 후 한 번 삭제(R18), 안내 문구 감사 다섯 곳(`step.onFail` 포함), `evalRound` 라운드 설정 절차(`runner-first.md`의 세션 준비·세션 후 정리와 일치). 측정 계약(이벤트·식별 계약, 종결 결과 목록, 계획 run 명단)을 같은 문서에 고정한다
   - Files: `docs/observation-checklist.md`
 - [ ] **T12 (P3, human: ~2h / CC: ~10min)** — lesson 설계 한 장(C3), "관찰 후 갱신" 표시
   - Files: `docs/designs/lesson-recipes.md`
 - [ ] **T13 (P3, human: ~1h / CC: ~10min)** — `docs/spec-v2.md` 아키텍처 도식 낡음 확인
   - Files: `docs/spec-v2.md`
 - 합계(추정, run 2 정정): 항목별 합 human ~29h / CC ~260분에 R6(T1 +~1h / +~25분)을 더해 human ~30h / CC ~285분(약 4.75h). 비율은 근거가 약한 추정. 이전 CEO 리뷰의 T8(읽기 전용 확인)은 T4의 테스트로 대체되었다.
+- 합계(추정, run 3 갱신): run 3이 T1 +1h/+15분, T3 +0.5h/+5분, T6 +1h/+10분, T7 +2h/+20분, T11 +1h/+5분을 더해 human ~35.5h / CC ~340분(약 5.7h). 비율은 근거가 약한 추정. 입력 설계 문서 규칙 수정(`runner-first.md`)과 TODOS.md 2항목은 이 리뷰에서 작업 트리에 이미 반영했다(별도 작업 없음).
 
 ## Suppressed findings (confidence < 5)
 - [P3] (confidence: 4/10) `lib/recipe-engine.js:21-30` `isValidSession`이 새 필드를 허용하는지 확인 안 함. 이벤트 콜백 방식이라 세션 객체를 바꾸지 않아 해당 없음일 가능성이 높다.
@@ -831,19 +833,684 @@ panel 호출 순서·연결       | clearSession 후 skipped 읽음 등     | N 
 - Parallelization: run 1 표 그대로 (T10은 T7에 합쳐짐), 4 lanes parallel / 2 sequential
 - Lake Score: 0/1 (커버리지 점수가 있는 답변 D1 run 2의 선택 B는 9/10이었다)
 
+## Eng Review 재실행 (run 3, 2026-10-02) — Decision ledger
+
+Target: 이 문서(`docs/designs/recipe-registry-ceo-review.md`, 브랜치 `claude/relaxed-keller-8kuzud` @ `e29efd3`). 사용자가 대상과 입력(Codex Outside Voice 발견 10건)을 직접 지정했고, 입력 설계 문서 `docs/designs/recipe-registry-runner-first.md`의 수정도 허용했다. 코드는 바꾸지 않는다. 작업 트리에만 남기고 커밋하지 않는다.
+범위 기록: `feature answers: 없음(제안된 기능 컷 없음); structure: Smaller arrangement, 기존 답변 D3 재사용(계획 구조 불변); accepted scope: 기능·계약 불변, run 3 확정 항목은 아래 "코드 대조로 확정한 구현 제약"과 각 R의 Accepted scope; pending remedies: R7~R15`.
+이전 실행의 D3~D8, R6(D1 run 2) 답변은 정확한 선행 승인으로 재사용한다. 이 세션의 질문 번호는 `D1 (run 3)`부터 새로 시작한다. D8(panel.js 무검증)은 바꾸지 않는다. R12만 R6의 구체적 반증(아래 증거)이 있어 다시 연다.
+
+### Outside Voice 입력 (이 run의 외부 리뷰)
+직전에 실행한 `/codex consult` (Codex CLI 0.160, 읽기 전용, `model_reasoning_effort=high`, 이 문서의 e29efd3 기준)가 끝까지 완료됐다. 발견 10건(P1 9건, P2 1건)과 권고 "revise Stage A before implementation"이다. 이 run은 새 Codex 호출 없이 그 결과를 입력으로 쓴다. 완료된 외부 리뷰이므로 Outside coverage는 completed다. Codex의 줄 번호와 재현 주장은 아래처럼 직접 확인했다.
+
+### 확인 결과 (코드 대조 + 제한된 프로브)
+| # | Codex 주장 | 확인 | 근거 |
+|---|---|---|---|
+| F1 | 8/16, 3/5, 4/5 신뢰구간이 넓고 dev 6 + nondev 2로 완주 게이트 통과 | **확인**(계산) | 정확 이항(Clopper-Pearson) 95%: 8/16 = 24.7~75.3%, 3/5 = 14.7~94.7%, 4/5 = 28.4~99.5%. dev가 6/6 성공하면 nondev 진짜 완주율이 20%여도 nondev 2/10 이상이 나올 확률 0.624(프로브 계산). `runner-first.md:36-43`(16회 = dev 6 + nondev 10) |
+| F2 | 결정 규칙이 모순·집계 미정의·Q3 의미 불일치 | **확인**(문서) | `runner-first.md:64-66`(B 5번과 피벗이 같은 참가자에게 동시 성립 가능), `:74-77`(참가자당 2회 응답, 집계 규칙 없음, "다시 쓰겠다"를 "혼자 할 수 있나"로 정의) |
+| F3 | 화면 이동 링크만 만든 절차가 끝나면 goal `done` | **확인**(코드) | `procedure-generator.js:28-30`(프롬프트가 "이동을 위해 눌러야 하는 링크까지만 절차"를 허용), `panel.js:496`(`markGoalDone`), `recipe-engine.js:109`(`status='done'`). R01~R03, R05~R07, R09는 goal이 1개(프로브) |
+| F4 | R6은 쓰기 주체 종류만 나누고 인스턴스는 안 나눔 | **확인**(실측 2건) | 실제 Chromium MV3 확장 페이지 2개에서 `get→set` 30건씩: 잠금 없음 2/60, 화면별 promise 대기열만 30/60, `navigator.locks` 60/60. 또 `recipe-engine.js` 모듈 인스턴스 2개 프로브: 인스턴스 A가 지운 탭 11 세션을 인스턴스 B의 `persist()`가 되살림(`recipe-engine.js:14,50-58`) |
+| F5 | `skipped`는 메모리에만 있어 패널 재오픈 시 초기화 | **확인**(코드) | `engine.js:4,27`(모듈 `Map`, `skipped: []`), `engine.js:135-139`(`manualAdvance`), `recipe-engine.js:65-73`(영속 세션에 skip·runId·seq 없음), `panel.js:373-379`(수동 진행 호출부) |
+| F6 | blocked + 탭 열림은 abandoned에 안 걸리고 in_progress 제외, 타임아웃 없음 | **확인**(코드) | `panel.js:538-541`(resolve 실패는 guidance 세션만 blocked, recipe 세션은 running 유지), `panel.js:833-844`(`onRemoved`는 패널이 열려 있을 때만), `providers.js:38,59,93`(fetch에 `AbortController`·timeout 없음, grep) |
+| F7 | "관측된 라벨만"은 런타임 불변식이 아님 | **확인**(코드) | `guard.js:86-102`(따옴표 구간만 `usedLabels`와 교차 검증), `panel.js:331`(`procedure.goalLabel` 검사 없이 표시), `recover.js:12-31`(복구 문구는 LLM 자유 텍스트, guard 미경유). 이미 계획에 관찰자 코딩이 증거로 지정됨(`ceo-review.md:159`) |
+| F8 | 가정한 참가자 흐름이 없음 | **확인**(코드) | `panel.html`·`panel.js`에 `recipe-intro` 템플릿 없음(`tpl-recipe-pick`, `tpl-recipe-done`만 존재), `panel.js:222-226`(칩 클릭 → 권한 → 바로 실행), `goal.site`는 런타임에서 참조 0건(grep), 실행 URL은 `currentTab.url`(`panel.js:482,599`) |
+| F9 | 정리가 내보내기보다 앞 | **확인**(문서) | `ceo-review.md:221`(정리 → 내보내기), `runner-first.md:83`(정리에 "확장 저장소 초기화" 포함) |
+| F10 | T11 독립 표기, T10 의존 잔존, 이벤트 ID 계약 없음, 더 단순한 대안 | **부분 확인**(문서) | `ceo-review.md:629`(T7이 T10에 의존, T10은 `:660`에서 T7에 합쳐짐), `:630` T11 "독립" 표기. 전략 지적은 증거가 아니라 판단이라 R15로 묻는다 |
+| (신규) | `skipAlreadyPassed`가 화면에 이미 통과한 step을 행동 없이 `done`으로 올림 | **확인**(코드) | `engine.js:109-118`, `panel.js:629`. 재사용 프로필에 이전 상태가 남아 있으면 완주로 집계됨. 정보용 기록은 결정 R11에 포함 |
+- `node --test test/*.test.js`: 254개 통과(현재 코드, 변경 없음).
+- 프로브 한계: Web Locks 프로브는 Chromium(Playwright 1.56)의 확장 옵션 페이지 2개 사이에서만 시험했다. 사이드패널 페이지와 서비스 워커 사이는 직접 시험하지 않았다(같은 확장 origin이라 동일 락 관리자를 쓰는 것이 Web Locks 명세이나 unknown, 검증: T1 통합 시험).
+
+### 코드 대조로 확정한 구현 제약 (승인된 범위의 구체화, 별도 질문 불필요)
+1. **skip은 발생 즉시 기록한다(F5).** `panel.js:377`의 수동 진행 호출부에서 `manualAdvance` 직후 `evallog.recordSkip(tabId, {stepIdx})`를 부른다. 승인된 설계("skipped는 완주가 아님", D4·E1)의 구현 방법 수정이다. goal 종료 시점의 `session.skipped.length` 읽기만으로는 패널 재오픈 전 skip이 사라지므로 그 방식은 쓰지 않는다. 호출 지점 확정만 바뀌고 D8의 무검증 상태는 그대로다.
+2. **runId와 seq는 패널 재오픈을 넘겨 복구한다(F5).** `tabId→runId` 매핑은 evallog 자체의 `chrome.storage.session` 키(`sc.evallog.active`)에 둔다. 이유: D4가 엔진 세션 객체를 바꾸지 않기로 했고 `isValidSession`(`recipe-engine.js:19-29`)이 새 필드를 허용하는지 확인하지 않아도 되게 한다. `seq`는 저장된 run 기록의 최대 seq에서 이어 붙인다(메모리 카운터 아님). 패널이 닫힌 사이 탭이 닫히면(`onRemoved`가 안 돎, `panel.js:833`) 다음 init의 abandoned 판정(제약 2, run 2)이 잡는다.
+3. **관찰자가 감사하는 화면은 네 곳이다(F7). → 제약 11에서 `step.onFail`을 더해 다섯 곳.** (a) 단계 `instruct`, (b) `proc-title`(`goalLabel`, `panel.js:331`), (c) 복구 문구(`recoverText`, `recover.js`), (d) 신뢰 배지. 체크시트의 "관측되지 않은 라벨" 코딩 항목은 이 네 곳을 각각 본다. `guardRejects` 건수는 보조 정보이며 "노출 0"의 증거가 아니다(guard가 **막은** 횟수). 런타임 guard·`goalLabel`·`recover` 변경은 이번 단계에서 제안하지 않는다(A는 기존 러너를 측정한다. B 이전 TD1과 함께 다룬다).
+4. **관찰 중에는 창 하나·사이드패널 하나만 쓴다(F4).** `recipe-engine.js`의 `persist()`가 세션 맵 전체를 한 키에 쓰는 기존 동작은 바꾸지 않는다(측정 대상). 체크리스트에 "관찰 세션 중 창 1개, 사이드패널 1개, 시작 전 다른 창 닫기"를 넣는다.
+5. **세션 종료 정의에 `crashOrHang`을 쓴다(F6).** resolver 응답이 무한정 오지 않거나(`providers.js`에 timeout 없음, 측정 대상) 확장이 멈추면 관찰자가 세션을 끝내고 체크시트에서 run을 `crashOrHang`으로 종결한다. 러너 쪽 timeout은 추가하지 않는다(게이트 4가 "크래시·무한 대기 0"을 측정하는데 timeout을 넣으면 그 측정 대상이 사라진다).
+6. **정리 전에 내보내기를 확인한다(F9).** 배포 순서와 세션 후 정리를 "내보내기 파일 저장 + 레코드 수 확인 → 키 제거·삭제 → 진행 중 세션 정리"로 고친다(`ceo-review.md:221`, `runner-first.md:83`). 기록을 지우는 쪽이 맞다는 해석은 어디에도 없다. 재검토 후 R18(D12 = A)로 `sc.evallog.*`는 세션마다 지우지 않고 20회를 누적해 최종 보고서 확인 후 한 번만 삭제한다.
+7. **관찰자 채점을 고정한다(F2).** 코딩 기준(Q1 0/1/2, Q2 이유 코드, "맡김" 판별)을 첫 세션 전에 체크리스트에 고정하고, 참가자 답 원문을 먼저 적은 뒤 코드를 매긴다. 집계는 `eval-report`가 원시 코드에서 계산한다(관찰자 손계산 아님). 어떤 집계 규칙을 쓸지는 R8·R9.
+8. **세션 시작 전 프로필 초기 상태를 확인한다(신규, `engine.js:109-118`, `panel.js:629`).** `skipAlreadyPassed`는 화면에 이미 통과 상태인 앞 step을 행동 없이 `done`으로 올린다. 재사용 프로필에 이전 설정이 남아 있으면 참가자가 아무것도 안 해도 완주로 집계된다. 체크리스트에 "레시피별 대상 설정이 아직 없는 깨끗한 테스트 계정·프로필로 시작, 시작 전 관찰자가 확인"을 넣는다. 러너는 바꾸지 않는다(측정 대상).
+9. **측정 계약을 구현보다 먼저 확정한다(F10).** 작업 순서는 아래 "Tasks 변경(run 3)"의 L0을 따른다: 프로토콜·이벤트 계약 확정(T11 앞당김, T1·T2 이벤트 식별 `{runId, seq, type}` 계약)이 T1·T2·T7보다 먼저다. 병렬화 표의 T7→T10 의존은 제거한다(T10은 T7에 합쳐짐).
+10. **효과 상태 규칙과 종결의 비가역성(Codex 재검토, R13 구체화).** 종결 동작은 `sc.evallog.obs.<runId>`에만 쓰므로(R13 = A, R6 키 소유) `eval-report`는 `effectiveStatus = obs.finalOutcome ?? run.status`로 읽는다. 체크시트는 `run.status`가 `in_progress`일 때만 종결을 허용하고(이미 `completed` 등 종결 상태면 거부), 종결은 되돌릴 수 없다. 종결 뒤 러너 쪽 이벤트(대기 중이던 `resolve()`가 늦게 돌아와 진행을 이어가는 경우 등, `panel.js:535,549,729`)는 상태를 바꾸지 못하고 보고서에 `postFinalizeEvents` 개수로만 표시한다. 완전성 규칙의 "`in_progress`"는 `effectiveStatus` 기준이다.
+11. **안내 문구 감사는 다섯 곳이다(Codex 재검토, 제약 3 확장).** 제약 3의 네 곳(단계 `instruct`, 제목 `goalLabel`, 복구 문구, 신뢰 배지)에 **단계 힌트 `step.onFail`**을 더한다: `session.attempts >= 1`이면 `hint.textContent = step.onFail`로 그대로 표시되며(`panel.js:342-345`) guard는 `instruct`·로케이터·verify 텍스트만 본다(`guard.js:76-139`, `onFail` 언급 0건). 러너는 바꾸지 않는다. B 이전 견고화 TODO(R17)에 `onFail`을 포함한다.
+12. **게이트 4의 무한 대기는 러너 상태와 무관하다(Codex 재검토).** `runner-first.md`의 게이트 4가 "`blocked`에서 크래시·무한 대기 0"이라고 적은 것과 달리, 첫 resolver 요청이 돌아오지 않으면 guidance 세션은 초기 `prompt` 상태에 머물러(`engine.js:25`, `panel.js:535`) `blocked`로 가지 않는다. 문구를 "크래시·무한 대기 0(resolver 호출 중 포함, 러너 상태 무관)"으로 고치고 구현 제약 5의 `crashOrHang` 종결과 일치시킨다.
+13. **관찰 라운드는 `evalRound`로 구분하고 판정은 라운드별로 한다(Codex 재검토).** 모든 run 기록에 `evalRound`(체크시트의 현재 라운드 설정, 기본 1)를 넣는다. "부분 통과 → 같은 구성으로 한 번 더 관찰한 뒤 다시 판단"(`runner-first.md:73`)의 2차 관찰은 `evalRound=2`이고, 계획 run 명단 대조와 판정은 라운드마다 따로 하며 라운드를 풀링하지 않는다(2차 라운드 판정이 최종이다).
+### R7: 완주 게이트의 모집단 (F1)
+Finding: F1 [P1] (confidence: 9/10) `runner-first.md:43`(분모 정의), `runner-first.md:36-43`(16회 = dev 6 + nondev 10) — 풀링한 8/16 완주 게이트가 dev 성공에 기댄다. reviewer: codex(outside voice), eng-review(계산 확인)
+Plan baseline: B 조건 1 = "레시피 완주율 50% 이상(R01~R06 16회 중 8회 이상)", dev + nondev 풀링(`runner-first.md:43,61`). 사용자 승인(D13, 입력 설계 APPROVED). 숫자는 시작 전에 사용자가 바꿀 수 있다고 명시(`runner-first.md:57`).
+Runtime evidence: 정확 이항 95% 구간 8/16 = 24.7~75.3%. dev 6/6 성공 가정에서 nondev 진짜 완주율 20%여도 nondev 2/10 이상이 나올 확률 0.624(위 확인 표 F1). 표본이 작아 어느 선택도 통계적 검증이 아니다.
+Comparison grid:
+| Commitment | Current | A 풀링 유지, 구간만 보고 | B 풀링 + nondev 하한 | C nondev만으로 판정 |
+|---|---|---|---|---|
+| 완주 게이트 모집단 | 풀링 16회 중 8회 이상 | 동일 | 풀링 16회 중 8회 이상 **그리고** nondev 10회 중 5회 이상 | nondev 10회 중 5회 이상(dev 6회는 정보용) |
+| 문서 표기 | "B 진행 게이트" | "파일럿 휴리스틱, 통계 검증 아님"과 구간을 병기 | A와 같음 | A와 같음 |
+| `eval-report` 출력 | 표 | + 95% 구간, nondev 하위 합계(게이트 아님) | A + nondev 하한 판정 | A + nondev 판정 |
+| 다른 B 조건 2~5, 중단 규칙 30% | 승인됨 | 불변 | 불변 | 불변 |
+| 추가 작업(CC) | — | ~10분 | ~15분(경계값 시험 4/10, 5/10 추가) | ~20분(분모 정의가 문서 곳곳에서 바뀜) |
+Question D1 (run 3):
+D1 (run 3) — 완주 게이트를 비개발자 기준으로도 확인할까요? (R7)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, Stage A 결정 규칙(`runner-first.md:43`)
+ELI10: B로 갈지 정하는 첫 조건은 "16회 중 8회 이상 완주"입니다. 그런데 16회 중 6회는 개발자 본인이 하고, 개발자는 거의 항상 성공합니다. 그러면 비개발자 10회 중 2회만 성공해도 조건이 통과됩니다. 이 도구의 대상은 비개발자인데 조건은 개발자 성공에 기대는 셈입니다. 또 16회는 표본이 작아 8/16의 95% 신뢰구간이 25~75%라, 이 숫자는 증명이 아니라 파일럿 판단입니다.
+Stakes if we pick wrong: 개발자가 6회 모두 성공하면 비개발자 진짜 완주율이 20%여도 약 62% 확률로 완주 조건이 통과해, 수요·실현성이 약한 레지스트리(B)에 투자하게 됩니다.
+Recommendation: B because 승인된 풀링 기준(16회 중 8회)은 그대로 두고 비개발자 하한만 더해, 개발자 성공이 비개발자 실패를 가리는 경로만 막으며 다른 승인 항목은 건드리지 않는다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) 풀링 유지, 구간만 보고
+  ✅ 승인된 숫자와 문서 정의를 바꾸지 않아 변경이 가장 작고 시작 전 합의를 다시 열지 않는다
+  ❌ 비개발자가 거의 실패해도 개발자 성공만으로 완주 조건이 통과할 수 있어 가장 약한 방어다
+B) 풀링 + 비개발자 하한 (recommended)
+  ✅ 개발자 성공이 비개발자 실패를 가리는 경로를 막고, 기존 풀링 숫자와 다른 조건은 그대로다
+  ❌ 새 숫자(비개발자 10회 중 5회)를 정해야 하고 5/10 근방에서는 표본이 작아 여전히 신뢰구간이 넓다
+C) 비개발자만으로 판정
+  ✅ 대상 사용자 기준으로만 판정해 해석이 가장 단순하고 개발자 편향이 없다
+  ❌ 승인된 "R01~R06 16회" 분모 정의를 문서 전체에서 바꿔야 하고 레시피별 비개발자 표본이 1~2회뿐이다
+Net: 개발자 성공이 비개발자 결과를 가리는 위험을 막기 위해 숫자 하나를 더 정하느냐, 승인된 정의를 그대로 두느냐.
+Header: 완주 게이트
+Options:
+A) 풀링 유지, 구간만 보고
+`runner-first.md:43`의 풀링 기준(R01~R06 16회 중 8회 이상)을 바꾸지 않습니다. 문서에 "파일럿 휴리스틱, 통계 검증 아님"과 95% 구간을 병기하고 `eval-report`가 구간과 비개발자 하위 합계를 보고만 합니다(게이트 아님). B 조건 2~5와 중단 규칙은 불변입니다.
+B) 풀링 + 비개발자 하한 (recommended)
+풀링 16회 중 8회 이상 그리고 비개발자 10회 중 5회 이상일 때만 완주 조건이 통과합니다. A의 표기와 구간 보고를 포함합니다. `runner-first.md`의 B 조건 1, `eval-report`와 경계값 시험(4/10, 5/10 추가)을 갱신합니다. B 조건 2~5와 중단 규칙은 불변입니다.
+C) 비개발자만으로 판정
+완주 조건을 비개발자 10회 중 5회 이상으로만 판정하고 개발자 6회는 정보용으로 내립니다. A의 표기와 구간 보고를 포함하며 분모 정의를 문서 전체에서 바꿉니다. B 조건 2~5와 중단 규칙은 불변입니다.
+
+State: approved
+Actual answer: D1 (run 3) = A) 풀링 유지, 구간만 보고 (사용자가 권장 B가 아닌 A를 선택)
+Accepted scope: `runner-first.md:43,61`의 풀링 기준(R01~R06 16회 중 8회 이상)은 바꾸지 않는다. 입력 설계 문서와 이 문서에 "파일럿 휴리스틱, 통계 검증 아님"과 95% 신뢰구간(8/16 = 24.7~75.3%, 3/5 = 14.7~94.7%, 4/5 = 28.4~99.5%)을 병기한다. `scripts/eval-report.js`는 결과 표에 각 비율의 95% 구간(정확 이항)과 nondev 하위 합계를 **보고만** 하고 게이트로 쓰지 않는다. B 조건 2~5와 중단 규칙 30%는 불변. 경계값 시험은 8/16, 3/5, 4/5, 30%만 유지하고 구간 계산 시험(알려진 값 3개)을 추가한다.
+History: 권장은 B(풀링 + nondev 하한)였으나 사용자가 A를 선택. 이 선택의 잔여 위험은 사용자가 수용: dev 6/6 성공 시 nondev 진짜 완주율 20%여도 완주 조건이 약 62% 확률로 통과한다(위 확인 표 F1). 보고서의 nondev 하위 합계 줄이 이 위험을 눈에 보이게 한다.
+
+### R8: B 진행과 피벗이 동시에 성립할 때의 판정 순서 (F2)
+Finding: F2 [P1] (confidence: 9/10) `runner-first.md:64-66`(B 조건 5와 피벗 조건), `runner-first.md:66`("그 외" 규칙) — 같은 참가자가 B 조건 5와 피벗 조건을 동시에 만족할 수 있고 우선순위가 없다. reviewer: codex(outside voice), eng-review(문서 확인)
+Plan baseline: B 조건 5 = "nondev 5명 중 3명 이상이 (Q2 '안 맡김') 또는 (Q3 '예' 그리고 Q1 1 이상)". 피벗 = "nondev 5명 중 4명 이상이 Q2 '맡김'이고 이유 코드가 '귀찮음/보기 싫음'". 두 규칙의 순서·배타 관계는 문서에 없다. 승인: 입력 설계 APPROVED(결정 규칙 문구), 우선순위는 미승인.
+Runtime evidence: 코드 아님(문서 논리). 반례: 참가자 4명이 Q2 "맡김 + 귀찮음"이면서 Q3 "예"·Q1 ≥ 1이면 B 조건 5(4명 ≥ 3)와 피벗(4명 ≥ 4)이 함께 성립하고, 다른 B 조건이 통과하면 "B로 진행"과 "피벗"이 모두 참이다.
+Comparison grid:
+| Commitment | Current | A 피벗 우선 | B 피벗형 참가자를 조건 5 집계에서 제외 | C 동시 성립 시 재관찰 |
+|---|---|---|---|---|
+| 동시 성립 시 판정 | 정의 없음(둘 다 참) | 피벗 | 조건 5의 분자에서 피벗형(Q2 맡김 + 귀찮음)을 뺀다. 그 결과 4명이 피벗형이면 조건 5가 실패해 피벗 | "재관찰(모순)" |
+| B 조건 5의 분자 정의 | 3명 이상이 (Q2 안 맡김) 또는 (Q3 예 그리고 Q1 ≥ 1) | 동일 | 위 정의에서 피벗형 참가자를 제외 | 동일 |
+| 피벗 조건 | 4명 이상 Q2 맡김 + 귀찮음 | 동일 | 동일 | 동일 |
+| 참가자 단위 코드(2회 응답 집계) | 미정 | 미정(R9) | 미정(R9) | 미정(R9) |
+| Q3 구성(재사용 정의) | 미정 | 미정(R10) | 미정(R10) | 미정(R10) |
+| 추가 작업(CC) | — | ~10분(문서 1문장 + `eval-report` 판정 순서 + 시험 1행) | ~15분(분자 계산 + 경계 시험 2행) | ~10분 |
+Question D2 (run 3):
+D2 (run 3) — B 진행과 피벗이 동시에 성립하면 어느 쪽으로 판정할까요? (R8)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, Stage A 결정 규칙(`runner-first.md:64-66`)
+ELI10: 지금 규칙은 "5명 중 3명이 안 맡기거나 혼자 할 수 있다고 하면 B로 진행"이고, 또 "5명 중 4명이 귀찮아서 맡기겠다고 하면 피벗"입니다. 귀찮아서 맡기겠다고 하면서 "다음엔 혼자 할 수 있다"고 답한 사람은 두 규칙에 동시에 셉니다. 그러면 결과표가 "B로 진행"과 "피벗"을 둘 다 말할 수 있고, 어느 쪽을 읽을지가 관찰자 마음이 됩니다.
+Stakes if we pick wrong: 규칙이 모순되면 관찰이 끝난 뒤 결론을 고를 여지가 생겨 숫자로 결정한다는 이 단계의 목적이 무너집니다.
+Recommendation: A because 규칙을 한 문장으로 닫을 수 있고 가장 보수적인 쪽(귀찮아서 맡기는 사람이 많으면 B에 돈을 쓰지 않음)이어서, 계산이 복잡한 B나 판단을 미루는 C보다 낫다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) 피벗 우선 (recommended)
+  ✅ 한 문장으로 닫혀 `eval-report`가 항상 하나의 판정만 내고 관찰자가 선택할 여지가 없다
+  ❌ 귀찮음 위임자가 혼자 하겠다고도 말한 경우의 정보가 판정에서는 버려진다
+B) 피벗형 참가자를 조건 5 집계에서 제외
+  ✅ 같은 사람을 B 근거와 피벗 근거로 두 번 세지 않아 해석이 가장 정직하다
+  ❌ 분자 정의가 복잡해지고 피벗 4명 미만(예: 3명)일 때도 B가 막혀 사실상 더 엄격한 새 기준이 된다
+C) 동시 성립 시 재관찰
+  ✅ 모순을 숨기지 않고 추가 관찰로 해소해 성급한 결론을 피한다
+  ❌ 판단을 미루어 관찰 5명을 한 번 더 모아야 하고 재관찰 비용이 이 단계의 목표(가장 싼 증거)와 어긋난다
+Net: 모순을 한 줄로 닫는 가장 단순한 우선순위냐, 이중 집계를 막는 더 엄격한 계산이냐, 판단을 미루는 재관찰이냐.
+Header: 판정 우선순위
+Options:
+A) 피벗 우선 (recommended)
+피벗 조건(nondev 4명 이상이 Q2 "맡김"이고 이유가 "귀찮음/보기 싫음")이 성립하면 B 조건 충족 여부와 무관하게 판정은 피벗입니다. `runner-first.md` Decision rule에 한 문장을 추가하고 `eval-report`가 피벗을 먼저 검사해 하나의 판정만 출력합니다. B 조건 1~5의 정의, 피벗 조건, 참가자 집계(R9), Q3 구성(R10)은 바꾸지 않습니다.
+B) 피벗형 참가자를 조건 5 집계에서 제외
+B 조건 5의 분자에서 "Q2 맡김 + 귀찮음" 참가자를 뺍니다. 피벗 조건과 나머지 B 조건은 그대로입니다. 규칙과 `eval-report` 계산, 경계값 시험(피벗형 3명·4명)을 갱신합니다. 참가자 집계(R9), Q3 구성(R10)은 바꾸지 않습니다.
+C) 동시 성립 시 재관찰
+두 조건이 동시에 참이면 판정을 "재관찰(모순)"로 출력하고 같은 구성으로 한 번 더 관찰합니다. 규칙 문장과 `eval-report` 출력, 시험 1행을 추가합니다. B 조건 정의, 참가자 집계(R9), Q3 구성(R10)은 바꾸지 않습니다.
+
+State: approved
+Actual answer: D2 (run 3) = A) 피벗 우선 (권장안 선택)
+Accepted scope: 피벗 조건(nondev 4명 이상이 Q2 "맡김"이고 이유 코드가 "귀찮음·보기 싫음")이 성립하면 B 조건 충족 여부와 무관하게 판정은 피벗이다. `runner-first.md` Decision rule에 이 한 문장을 추가하고, `scripts/eval-report.js`는 피벗을 먼저 검사해 항상 하나의 판정(B 진행 / 중단·피벗 / 재관찰)만 출력한다. 시험: 피벗형 4명이면서 B 조건 5와 나머지 B 조건이 모두 참인 입력에서 판정이 피벗. B 조건 1~5의 정의, 피벗 조건, 참가자 집계(R9), Q3 구성(R10)은 바꾸지 않는다.
+History: —
+
+### R9: 참가자당 2회 응답의 참가자 단위 집계 (F2)
+Finding: F2 [P1] (confidence: 9/10) `runner-first.md:34-42`(참가자당 레시피 2개), `runner-first.md:72-77`(각 nondev 회차 직후 Q1~Q3), `runner-first.md:64-66`("nondev 5명 중 3명/4명") — 판정 단위는 참가자인데 응답은 회차마다 2번 나오고 집계 규칙이 없다. reviewer: codex(outside voice), eng-review(문서 확인)
+Plan baseline: B 조건 5와 피벗 조건은 "nondev 5명 중 N명"으로 쓰였다. 한 참가자의 두 회차 응답이 다를 때 그 참가자를 어떻게 셀지 문서에 없다. 승인: 규칙 문구는 입력 설계 APPROVED, 집계 단위는 미승인. 우선순위는 R8(approved, 피벗 우선).
+Runtime evidence: 코드 아님(문서 논리). 예: P1은 R01(Q2 "맡김")과 R04(Q2 "안 맡김")를 하면 참가자 단위 Q2가 정의되지 않는다. `eval-report`(T7)와 체크시트(T6) 스키마가 이 단위를 정해야 계산할 수 있다.
+Comparison grid:
+| Commitment | Current | A 두 회차 모두 충족 | B 마지막 회차 답만 | C 회차 단위로 계산 |
+|---|---|---|---|---|
+| 판정 단위 | 참가자 5명(집계 규칙 없음) | 참가자 5명, 한 조건을 충족하려면 그 참가자의 **두 회차 코드가 모두** 조건을 만족 | 참가자 5명, 참가자 코드 = 두 번째(마지막으로 코딩된) 회차의 응답 | nondev 10회차 |
+| B 조건 5 임계값 | 3/5명 | 3/5명(불변) | 3/5명(불변) | 6/10회차(숫자 변경) |
+| 피벗 임계값(R8: 피벗 우선) | 4/5명 | 4/5명, 두 회차 모두 Q2 "맡김 + 귀찮음" | 4/5명(불변) | 8/10회차(숫자 변경) |
+| 코드가 없는 회차(abandoned·crashOrHang로 종결, 응답 없음) | 미정 | 두 회차 코드가 모두 있어야 충족, 없으면 미충족으로 세고 보고에 "코딩된 회차 n/2" 표시 | 마지막으로 코딩된 회차를 사용, 코딩된 회차가 0이면 미충족 | 코딩 안 된 회차는 미충족으로 센다(분모 10 고정) |
+| Q3 구성 | 미정 | 미정(R10) | 미정(R10) | 미정(R10) |
+| 추가 작업(CC) | — | ~10분(체크시트 참가자 요약 + 계산 + 경계 시험 2행) | ~10분 | ~15분(문서 숫자 3곳 변경 + 시험) |
+Question D3 (run 3):
+D3 (run 3) — 참가자 한 명의 두 회차 응답을 어떻게 한 사람의 답으로 셀까요? (R9)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, Stage A 결정 규칙(`runner-first.md:64-66,72-77`)
+ELI10: 비개발자 5명이 각각 레시피 2개를 하고, 끝날 때마다 같은 질문 3개를 받습니다. 그런데 규칙은 "5명 중 3명이 ..."처럼 사람 단위로 씁니다. 한 사람이 첫 번째 회차엔 "맡기겠다"고 하고 두 번째엔 "안 맡기겠다"고 하면 그 사람을 어느 쪽으로 셀지 정해져 있지 않아, 관찰자가 나중에 골라 셀 수 있습니다.
+Stakes if we pick wrong: 집계 규칙이 없으면 같은 응답으로도 B 진행과 중단이 모두 가능한 숫자를 만들 수 있고, 결과를 재현할 수 없습니다.
+Recommendation: A because 승인된 "사람 5명 중 N명" 임계값을 그대로 쓰면서 어느 한 회차의 답만 골라 쓰는 여지를 없애고, 회차 단위(C)처럼 숫자를 바꾸지도 않는다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) 두 회차 모두 충족 (recommended)
+  ✅ 승인된 3/5, 4/5 임계값을 그대로 쓰고 한 회차만 골라 읽는 선택 여지가 없어 규칙이 가장 엄격하다
+  ❌ 두 회차 답이 갈리거나 한 회차가 중단되면 그 사람은 어느 조건에도 안 세어져 "그 외(재관찰)"가 늘어난다
+B) 마지막 회차 답만
+  ✅ 경험이 더 쌓인 뒤의 답을 쓰고 결측에도 비교적 안정적으로 한 사람당 한 값이 나온다
+  ❌ 두 번째 회차가 항상 Tier 2 레시피라 순서와 난이도가 섞이고 첫 회차의 반대 답이 버려진다
+C) 회차 단위로 계산
+  ✅ 판정 단위가 10개로 늘어 임계값 계산이 쉽고 응답이 한 개도 버려지지 않는다
+  ❌ 같은 사람의 두 회차를 독립 표본처럼 세고 승인된 3/5, 4/5가 6/10, 8/10으로 바뀌어 문서 곳곳을 고쳐야 한다
+Net: 사람 단위 임계값을 지키는 엄격한 집계(A)냐, 마지막 답만 쓰는 단순함(B)이냐, 단위를 회차로 바꾸는 큰 수정(C)이냐.
+Header: 참가자 집계
+Options:
+A) 두 회차 모두 충족 (recommended)
+참가자 한 명이 B 조건 5의 항목이나 피벗형(Q2 "맡김"과 이유 "귀찮음/보기 싫음")으로 세어지려면 그 참가자의 **두 회차 코드가 모두** 조건을 만족해야 합니다. 코드가 하나라도 없으면 미충족으로 세고 보고에 "코딩된 회차 n/2"를 표시합니다. 임계값 3/5, 4/5는 불변이고 `runner-first.md`, 체크시트의 참가자 요약, `eval-report` 계산을 갱신합니다. 피벗 우선(R8), Q3 구성(R10)은 바꾸지 않습니다.
+B) 마지막 회차 답만
+참가자 코드는 두 번째(마지막으로 코딩된) 회차의 응답입니다. 임계값 3/5, 4/5는 불변이고 코딩된 회차가 0이면 미충족입니다. 문서, 체크시트의 참가자 요약, `eval-report` 계산을 갱신합니다. 피벗 우선(R8), Q3 구성(R10)은 바꾸지 않습니다.
+C) 회차 단위로 계산
+판정 단위를 nondev 10회차로 바꾸고 임계값을 6/10(B 조건 5), 8/10(피벗)으로 바꿉니다. 코딩 안 된 회차는 미충족으로 세고 분모는 10으로 고정합니다. 문서의 숫자 3곳과 `eval-report`, 시험을 갱신합니다. 피벗 우선(R8), Q3 구성(R10)은 바꾸지 않습니다.
+
+State: approved
+Actual answer: D3 (run 3) = A) 두 회차 모두 충족 (권장안 선택)
+Accepted scope: 참가자 한 명이 B 조건 5의 항목(Q2 "안 맡김" 또는 Q3 "예" + Q1 1 이상)이나 피벗형(Q2 "맡김" + 이유 "귀찮음·보기 싫음")으로 세어지려면 그 참가자의 **두 회차 코드가 모두** 조건을 만족해야 한다. 코드가 하나라도 없으면(abandoned·`crashOrHang`로 종결되어 응답 없음 등) 미충족으로 세고 보고에 "코딩된 회차 n/2"를 표시한다. 임계값 3/5, 4/5는 불변. `runner-first.md` Decision rule에 집계 문장을 추가하고, 체크시트(T6)에 참가자 요약 보기, `scripts/eval-report.js`(T7)와 시험에 이 계산(두 회차 일치, 불일치, 한 회차 결측)을 넣는다. 피벗 우선(R8)과 Q3 구성(R10)은 바꾸지 않는다.
+History: —
+
+### R10: Q3가 재사용을 재지 못한다 (F2)
+Finding: F2 [P1] (confidence: 8/10) `runner-first.md:76-77`(Q3 문구와 "다시 쓰겠다" 정의), `runner-first.md:65`(B 조건 5), `runner-first.md:22-26`(H1: 이해·통제) — Q3은 "혼자 할 수 있을 것 같나요?"(자립 가능성)인데 규칙은 이를 "다시 쓰겠다"(재사용 의향)로 읽는다. reviewer: codex(outside voice), eng-review(문서 확인)
+Plan baseline: Q3 = "다음에 비슷한 설정을 혼자 할 수 있을 것 같나요? 예/아니오". "결정 규칙의 '다시 쓰겠다'는 3번이 '예'이고 1번이 1 이상인 경우로 정의한다". B 조건 5의 분자 (Q3 예 그리고 Q1 1 이상). 승인: 입력 설계 APPROVED. R8(피벗 우선), R9(두 회차 모두 충족)은 approved이며 이 선택에서 불변.
+Runtime evidence: 코드 아님(문서의 측정 타당도). "혼자 할 수 있다"는 이 도구가 다음에 필요 없다는 신호이기도 해서 재사용 수요의 증거로 읽을 수 없다. 수요 증거는 현재 0(`runner-first.md:12-13`).
+Comparison grid:
+| Commitment | Current | A 의미를 정직하게 바꿈 | B 재사용 질문(Q4) 추가 | C Q3을 재사용 질문으로 교체 |
+|---|---|---|---|---|
+| 질문 수(회차당) | 3개(Q1~Q3) | 3개(불변) | 4개(Q1~Q3 + Q4 "다음에 비슷한 설정을 할 때 이 도구를 다시 쓰겠습니까? 예/아니오") | 3개(Q3 자리를 재사용 질문으로) |
+| B 조건 5의 분자 | Q2 "안 맡김" 또는 (Q3 예 그리고 Q1 ≥ 1) | 동일 식, 이름만 "자립 가능(이해·통제 성과)"으로 바꾸고 "다시 쓰겠다/재사용" 표현 삭제 | Q2 "안 맡김" 또는 (Q4 예 그리고 Q1 ≥ 1). Q3은 정보용 | Q2 "안 맡김" 또는 (새 Q3 예 그리고 Q1 ≥ 1) |
+| 재사용 의향 측정 | 측정 못 하면서 측정하는 것처럼 표기 | 이번 단계에서 측정하지 않음(한계로 명시) | 가정형 질문으로 측정(Q2처럼 행동이 아닌 응답) | 가정형 질문으로 측정, 자립 가능성은 측정 안 함 |
+| 임계값 3/5, 피벗 4/5, R8·R9 규칙 | 승인됨 | 불변 | 불변 | 불변 |
+| 추가 작업(CC) | — | ~10분(문서 표현 정리) | ~25분(체크시트 필드 + 코딩 기준 + `eval-report` + 시험) | ~20분(문구 교체 + 시험) |
+Question D4 (run 3):
+D4 (run 3) — "다시 쓰겠다"를 무엇으로 재야 할까요? (R10)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, Stage A 결정 규칙(`runner-first.md:65,76-77`)
+ELI10: 세 번째 질문은 "다음에 비슷한 설정을 혼자 할 수 있을 것 같나요?"입니다. 규칙은 이 답 "예"를 "이 도구를 다시 쓰겠다"로 읽습니다. 그런데 혼자 할 수 있다는 건 오히려 도구가 필요 없다는 뜻일 수 있어서, 이 질문은 다시 쓸지를 알려 주지 않습니다. 지금은 이 도구를 원하는 사람이 있다는 증거가 하나도 없는 상태라 이 구분이 중요합니다.
+Stakes if we pick wrong: "혼자 할 수 있다" 답으로 B 조건 5가 통과되면 사실은 도구가 필요 없다는 신호를 수요 증거로 오독해 레지스트리(B)에 투자하게 됩니다.
+Recommendation: A because 질문과 코딩을 하나도 늘리지 않고 규칙이 실제로 재는 것(이해·통제를 얻었는가, 입력 설계 H1)에 이름을 맞추면 오독을 없애며, 재사용 의향은 가정형 응답이라 어차피 약한 증거다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) 의미를 정직하게 바꿈 (recommended)
+  ✅ 질문·코딩·임계값을 바꾸지 않아 변경이 문서 표현 정리뿐이고 규칙이 재는 것과 이름이 일치한다
+  ❌ 재사용 의향은 이번 단계에서 측정하지 않으므로 수요 증거는 계속 비어 있다고 명시해야 한다
+B) 재사용 질문(Q4) 추가
+  ✅ 재사용 의향을 직접 묻고 자립 가능성(Q3)도 따로 남아 두 정보를 모두 얻는다
+  ❌ 회차마다 질문이 하나 늘어 관찰 시간이 늘고 가정형 응답(실제 행동 아님)이라 증거 강도는 약하다
+C) Q3을 재사용 질문으로 교체
+  ✅ 질문 수를 3개로 유지하면서 규칙이 말하는 재사용을 그대로 묻는다
+  ❌ 자립 가능성(이해 전이) 정보가 사라지고 승인된 질문 구성이 바뀌어 H1의 이해·통제 측정이 약해진다
+Net: 규칙의 이름을 실제 측정에 맞추는 가장 작은 수정(A)이냐, 재사용 의향을 질문으로 더 재느냐(B, C).
+Header: Q3 의미
+Options:
+A) 의미를 정직하게 바꿈 (recommended)
+Q3을 "혼자 할 수 있음(자립 가능, 이해·통제 성과)"으로 읽고 `runner-first.md`와 이 문서의 "다시 쓰겠다/재사용" 표현을 모두 그 이름으로 바꿉니다. 질문 구성, 코딩, 임계값, R8·R9 규칙은 불변이고 "재사용 의향은 이번 단계에서 측정하지 않음"을 한계로 명시합니다.
+B) 재사용 질문(Q4) 추가
+회차 직후 질문 4번 "다음에 비슷한 설정을 할 때 이 도구를 다시 쓰겠습니까? 예/아니오"를 추가합니다. B 조건 5의 분자는 Q2 "안 맡김" 또는 (Q4 "예" 그리고 Q1 1 이상)이고 Q3은 정보용으로 보고합니다. 체크시트 필드, 코딩 기준, `eval-report`, 시험을 갱신합니다. 임계값, R8·R9 규칙은 불변입니다.
+C) Q3을 재사용 질문으로 교체
+Q3의 문구를 위 재사용 질문으로 바꾸고 자립 가능성 질문은 삭제합니다. B 조건 5는 Q2 "안 맡김" 또는 (Q3 "예" 그리고 Q1 1 이상)로 식이 같고 의미만 재사용이 됩니다. 문구, 체크시트, 시험을 갱신합니다. 임계값, R8·R9 규칙은 불변입니다.
+
+State: approved
+Actual answer: D4 (run 3) = A) 의미를 정직하게 바꿈 (권장안 선택)
+Accepted scope: Q3을 "혼자 할 수 있음(자립 가능, 이해·통제 성과)"으로 읽고 `runner-first.md:65,76-77`과 이 문서의 "다시 쓰겠다/재사용" 표현을 모두 그 이름으로 바꾼다. 질문 구성(Q1~Q3), 코딩, 임계값 3/5·4/5, R8(피벗 우선), R9(두 회차 모두 충족)은 불변. `runner-first.md`에 "재사용 의향은 이번 단계에서 측정하지 않음(수요 증거는 계속 없음)"을 한계로 명시한다.
+History: —
+
+### R11: 화면 이동만 한 절차가 goal 완료로 집계된다 (F3)
+Finding: F3 [P1] (confidence: 9/10) `procedure-generator.js:28-30`, `sidepanel/panel.js:496`, `lib/recipe-engine.js:109`, `lib/engine.js:89-96` — 프롬프트가 "이동을 위해 눌러야 하는 링크까지만 절차"를 허용하고, 그 절차의 마지막 step 통과 후 `session.status='done'` → `handleGuidanceDone` → `markGoalDone`. 실제 설정 없이 goal이 `done`이 된다. reviewer: codex(outside voice), eng-review(코드 확인)
+Plan baseline: 완주 = "모든 goal이 `done`이고 `skipped` 없음"(`runner-first.md:43`). 허위 완주 = `done`이면서 관찰자가 `manualCheck`를 직접 확인했을 때 실패(`runner-first.md:69`). goal 단위 완주율은 중단 규칙 30%와 정보용 60%에 쓰인다(`runner-first.md:66,68`). 승인: 입력 설계 APPROVED. D8(panel.js 무검증)은 불변.
+Runtime evidence: 코드로 확인(위 확인 표 F3). R01~R03, R05~R07, R09는 goal이 1개라 goal 단위 = 레시피 단위. 다중 goal 레시피(R04 2개, R08 2개, R10 2개) 중 R01~R06 범위는 R04뿐이다(프로브). `manualCheck`는 레시피 단위라 goal별 검증은 없다. 러너를 바꾸지 않고 측정하는 것이 A 단계의 목적이다(`runner-first.md:99-100`).
+Comparison grid:
+| Commitment | Current | A 화면 이동 전용 절차를 기록·보고 | B A + 완주율 분자를 검증 통과로 제한 | C 현행 유지(기록 없음) |
+|---|---|---|---|---|
+| goal별 기록 필드 | 결과, 화면 수, `resolverMs`, `guardRejects` 이유, `blockedCause` 등 | + `procedureKind`(`nav_only`/`action`/`mixed`, 순수 함수 `classifyProcedure`가 `resolve()` 결과 steps로 계산, 라벨 텍스트 미저장) | A와 같음 | 변경 없음 |
+| 결과표 보고 | 없음 | `done`이 된 goal 중 `nav_only` 개수와 허위 완주와의 겹침을 보고(게이트 아님) | A와 같음 | 없음 |
+| B 조건 1 완주율의 분자 | `done`이고 `skipped` 없음 | 동일 | `done`이고 `skipped` 없음 **그리고** 관찰자 `manualCheck` 통과 | 동일 |
+| 허위 완주 정의, 조건 2(1건 이하) | 승인됨 | 불변 | 불변(조건 1과 함께 쓰임) | 불변 |
+| 러너 동작(`resolve`, `markGoalDone`, 프롬프트) | 기존 | 불변(측정 대상) | 불변 | 불변 |
+| 추가 작업(CC) | — | ~15분(분류 함수, 시험 3행, `eval-report` 한 줄) | ~30분(A + 분자 변경, 경계 시험, 문서 3곳) | 0 |
+Question D5 (run 3):
+D5 (run 3) — 화면 이동만 한 절차가 "완료"로 세어지는 것을 어떻게 다룰까요? (R11)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, T1·T7(evallog 기록과 결과 계산)
+ELI10: AI는 지금 화면에서 목표까지 갈 수 없으면 "설정 화면으로 가는 링크를 누르세요"까지만 안내를 만듭니다. 사용자가 그 링크를 누르면 안내가 끝난 것으로 보고 앱이 이 목표를 "완료"로 처리합니다. 실제 설정은 하나도 안 했는데도요. 이 단계의 관찰자는 마지막에 직접 설정이 됐는지 확인하므로 이런 경우는 "허위 완주"로 잡히지만, 왜 허위였는지는 지금 기록으로는 알 수 없습니다.
+Stakes if we pick wrong: 원인을 모르면 B 단계에서 "러너가 목표 달성과 화면 이동을 구분해야 한다"는 가장 중요한 설계 단서를 놓치고, 목표 단위 완주율(중단 규칙 30%)이 부풀려져 중단 규칙이 잘 작동하지 않습니다.
+Recommendation: A because 러너를 바꾸지 않고(이 단계는 기존 러너를 측정한다) 기록 한 필드만 더해 "허위 완주의 원인이 화면 이동 전용 절차인가"를 데이터로 남기고, 승인된 완주 정의와 게이트는 건드리지 않는다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) 화면 이동 전용 절차를 기록·보고 (recommended)
+  ✅ 허위 완주의 원인을 데이터로 분리해 B 단계 설계에 쓸 수 있고 러너와 승인된 정의는 그대로다
+  ❌ 분류는 steps 모양으로 추정하는 휴리스틱이라 틀릴 수 있고 정보용이라 게이트는 여전히 부풀려질 수 있다
+B) 기록 + 완주율 분자를 검증 통과로 제한
+  ✅ 완주율이 화면 이동만 한 가짜 완주를 포함하지 않아 조건 1이 가장 정직한 숫자가 된다
+  ❌ 승인된 완주 정의(`done`이고 `skipped` 없음)를 바꾸고 허위 완주가 조건 1과 2에서 이중으로 불이익을 받는다
+C) 현행 유지(기록 없음)
+  ✅ 추가 작업이 없고 `manualCheck` 관찰자 확인이 이미 허위 완주를 잡는다
+  ❌ 허위 완주가 나와도 원인이 화면 이동 전용 절차인지 알 수 없어 B 단계 설계 단서를 놓친다
+Net: 러너를 건드리지 않고 원인만 기록하는 작은 수정(A)이냐, 완주 정의까지 바꾸느냐(B), 지금처럼 관찰자 확인에만 의존하느냐(C).
+Header: 화면 이동 절차
+Options:
+A) 화면 이동 전용 절차를 기록·보고 (recommended)
+goal 종료 때 `procedureKind`(`nav_only`/`action`/`mixed`)를 evallog에 기록합니다. 순수 함수 `classifyProcedure(procedure)`가 `resolve()` 결과 steps의 target·verify 모양으로 계산하며 라벨 텍스트는 저장하지 않습니다. `eval-report`는 `done`이 된 goal 중 `nav_only` 개수와 허위 완주와의 겹침을 보고합니다(게이트 아님). 러너(`resolve`, `markGoalDone`, 프롬프트), 완주·허위 완주 정의, 조건 1·2, 중단 규칙은 불변입니다.
+B) 기록 + 완주율 분자를 검증 통과로 제한
+A의 기록·보고를 포함하고, B 조건 1의 완주 분자를 `done`이고 `skipped` 없음 그리고 관찰자 `manualCheck` 통과로 바꿉니다. 문서 3곳, `eval-report`, 경계 시험을 갱신합니다. 러너, 허위 완주 정의, 조건 2, 중단 규칙은 불변입니다.
+C) 현행 유지(기록 없음)
+`procedureKind`를 기록하지 않고 관찰자 `manualCheck` 확인에만 의존합니다. 문서와 코드 계획은 바뀌지 않습니다.
+
+State: approved
+Actual answer: D5 (run 3) = A) 화면 이동 전용 절차를 기록·보고 (권장안 선택)
+Accepted scope: goal 종료 때 `procedureKind`(`nav_only`/`action`/`mixed`)를 evallog goal 기록에 추가한다. 순수 함수 `classifyProcedure(procedure)`(lib/evallog.js)가 `resolve()` 결과 steps의 target·verify 모양으로 계산하며 라벨 텍스트는 저장하지 않는다(분류 규칙: 모든 step이 `target.by==="linkText"`이고 verify가 `urlIncludes`면 `nav_only`, 한 step도 그렇지 않으면 `action`, 섞이면 `mixed`). `scripts/eval-report.js`는 `done`이 된 goal 중 `nav_only` 개수와 허위 완주(관찰자 판정)와의 겹침을 보고한다(게이트 아님). 러너(`resolve`, `markGoalDone`, 프롬프트), 완주·허위 완주 정의, B 조건 1·2, 중단 규칙은 불변. 시험: 분류 함수의 `nav_only`/`action`/`mixed`/빈 steps 4행.
+History: —
+
+### R12: 화면별 대기열은 여러 인스턴스 사이를 막지 못한다 (F4, R6 재개)
+Finding: F4 [P1] (confidence: 9/10) `lib/recipe-engine.js:14,50-58`(모듈 `Map` + 전체 맵 한 키 쓰기), `sidepanel/panel.js:833-844`, 승인된 R6(D1 run 2 = B, 키 분리 + 화면별 promise 대기열) — 같은 evallog 키를 쓰는 인스턴스가 둘이면(창 2개의 사이드패널 등) 각자 대기열이 따로라 덮어쓴다. reviewer: codex(outside voice), eng-review(실측 2건)
+Plan baseline: R6 승인 범위 = run 기록 `sc.evallog.run.<runId>`는 사이드패널만, 관찰자 판정 `sc.evallog.obs.<runId>`는 옵션 페이지만 쓰고, "각 화면(실행 환경) 안의 쓰기는 대기열(promise 체인)로 직렬화"(D1 run 2). 답변 참조: `ceo-review.md:742-745`.
+Runtime evidence: 실제 Chromium(Playwright 1.56.1, MV3 확장 옵션 페이지 2개, `chrome.storage.local`에 같은 키 `get→set` 30건씩 동시): 잠금 없음 2/60, 화면별 promise 대기열만 30/60, `navigator.locks.request` 60/60. 두 `recipe-engine.js` 모듈 인스턴스 프로브: 인스턴스 A가 지운 탭 11 세션을 인스턴스 B의 `persist()`가 되살림. 한계: 사이드패널 페이지와 서비스 워커 사이는 직접 시험하지 않았다(unknown, 검증: T1 통합 시험). 구체적 반증이 있어 R6를 다시 연다.
+Comparison grid:
+| Commitment | Current(R6 승인) | A R6 유지 + 프로토콜 규칙 | B 교차 컨텍스트 락(`navigator.locks`) | C 단일 소유 인스턴스 |
+|---|---|---|---|---|
+| 키 구조(`run.<runId>` 사이드패널만, `obs.<runId>` 옵션 페이지만, `sc.evallog.` 접두어, `sc.settings` 불가침) | 승인됨 | 불변 | 불변 | 불변 |
+| 직렬화 범위 | 화면 안 promise 대기열 | 화면 안 promise 대기열(불변) | 모든 evallog `get→set`을 이름 있는 락 `sc.evallog` 안에서 실행(사이드패널·옵션 페이지·서비스 워커 공통). `navigator.locks`가 없으면 화면 안 promise 대기열로 폴백 | 화면 안 promise 대기열 + 인스턴스 소유권 확인 |
+| 인스턴스 2개가 같은 run 키에 쓰기 | 덮어씀(실측 30/60) | 막지 못함(프로토콜 "창 1개·패널 1개"로만 회피) | 막음(실측 60/60) | 소유자가 아닌 인스턴스의 쓰기는 거부하고 손실 카운트 + 배너 |
+| `seq` 부여 | 저장된 run 기록의 최대 seq에서 이어 붙임(구현 제약 2) | 동일(경합 시 중복 가능) | 락 안에서 읽은 최대 seq에서 부여(중복 불가) | 소유자만 부여 |
+| 프로토콜 규칙 "관찰 중 창 1개, 사이드패널 1개"(구현 제약 4, 엔진 `persist()`는 바꾸지 않음) | 승인 대상 아님 | 포함 | 포함 | 포함 |
+| 시험 | 같은 화면 안 동시 쓰기 | 불변 | 락 안 읽기-수정-쓰기, 폴백 경로, 두 락 사용자 직렬화(가짜 `navigator.locks`) | 소유권 거부 경로, 손실 카운트 |
+| 추가 작업(CC) | — | 0 | ~10분(대기열을 락 래퍼로 교체, 시험 3행) | ~40분(소유권 키, 배너 경로, 시험) |
+Question D6 (run 3):
+D6 (run 3) — 두 개의 화면(사이드패널 둘 등)이 같은 기록에 동시에 쓰면 어떻게 막을까요? (R12)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, T1(lib/evallog.js 쓰기 경로)
+ELI10: 저번 리뷰에서 "각 화면 안에서 줄 세우면 동시 쓰기 유실이 막힌다"고 정했습니다. 이번에 실제 크롬에서 확장 페이지 2개가 같은 키에 30번씩 쓰자, 각자 줄을 세워도 60번 중 30번만 남았습니다. 줄이 화면마다 따로이기 때문입니다. 반면 크롬에 내장된 잠금(`navigator.locks`)을 쓰면 60번이 모두 남았습니다. 사이드패널이 창마다 하나씩 열릴 수 있어서 관찰 중 실수로 창이 둘 열리면 기록이 조용히 줄어들 수 있습니다.
+Stakes if we pick wrong: 두 번째 창이 열리는 순간 기록이 조용히 사라지고, 사라진 run이 완주율 분모에서 빠져 B 진행 판단이 틀어집니다. 같은 문제를 엔진의 세션 저장(`persist()`)도 갖고 있어, 어떤 선택이든 "관찰 중에는 창 하나"라는 운영 규칙은 필요합니다.
+Recommendation: B because 승인된 키 분리와 화면별 대기열을 그대로 두고 그 위에 브라우저 내장 잠금 한 겹만 더해 실측으로 60/60을 확인했으며, 소유 인스턴스를 새로 만드는 C보다 코드가 작다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) R6 유지 + 프로토콜 규칙
+  ✅ 코드 변경이 없고 관찰 중 창 하나라는 운영 규칙으로 실제 관찰 조건에서는 인스턴스가 하나뿐이다
+  ❌ 실수로 창이 둘 열리면 기록이 조용히 줄고(실측 30/60) 이를 감지하는 장치가 없다
+B) 교차 컨텍스트 락 (recommended)
+  ✅ 사이드패널·옵션 페이지·서비스 워커가 같은 락을 써서 실측 60/60으로 유실이 없고 seq 중복도 막는다
+  ❌ 사이드패널과 서비스 워커 사이는 실측하지 못했고 락 대기가 길어지면 쓰기가 늦어지는 부작용을 시험으로 확인해야 한다
+C) 단일 소유 인스턴스
+  ✅ 소유자가 아닌 인스턴스의 쓰기를 거부하고 손실로 세어 배너로 알려 줘 감지까지 된다
+  ❌ 소유권 키와 거부 경로가 새로 생겨 코드와 시험이 가장 크고, 정당한 새 창도 쓰기가 막힌다
+Net: 기록 유실을 구조적으로 막는 작은 수정(B)이냐, 운영 규칙에만 기대느냐(A), 감지까지 하는 큰 수정(C)이냐.
+Header: 교차 직렬화
+Options:
+A) R6 유지 + 프로토콜 규칙
+승인된 R6(키 분리 + 화면별 promise 대기열)을 바꾸지 않습니다. 체크리스트의 "관찰 중 창 1개·사이드패널 1개"(구현 제약 4)만 적용합니다. 코드 계획 변경은 없습니다.
+B) 교차 컨텍스트 락 (recommended)
+evallog의 모든 `get→set`을 이름 있는 락 `sc.evallog`(`navigator.locks.request`) 안에서 실행하고 `seq`를 락 안에서 읽은 최대값에서 부여합니다. `navigator.locks`가 없으면 화면 안 promise 대기열로 폴백합니다. R6의 키 구조와 `sc.settings` 불가침은 불변이고 체크리스트의 "창 1개·패널 1개"(구현 제약 4)도 그대로입니다. 시험: 락 안 읽기-수정-쓰기, 폴백, 두 락 사용자 직렬화(가짜 `navigator.locks`).
+C) 단일 소유 인스턴스
+evallog가 `chrome.storage.session`에 소유 인스턴스를 기록하고 소유자가 아닌 인스턴스의 쓰기는 거부해 손실 카운트와 옵션 페이지 배너로 알립니다. R6의 키 구조는 불변이고 체크리스트의 "창 1개·패널 1개"(구현 제약 4)도 그대로입니다. 시험: 소유권 거부 경로, 손실 카운트.
+
+State: approved
+Actual answer: D6 (run 3) = B) 교차 컨텍스트 락 (권장안 선택)
+Accepted scope: `lib/evallog.js`의 모든 `get→set`(append, 관찰자 판정 저장, 삭제, `seq` 부여)을 이름 있는 락 `sc.evallog`(`navigator.locks.request`) 안에서 실행하고, `seq`는 락 안에서 읽은 저장된 최대 seq에서 부여한다. `navigator.locks`가 없는 환경(Node 테스트 등)은 화면 안 promise 대기열로 폴백한다. R6의 키 구조(`sc.evallog.run.<runId>` 사이드패널만, `sc.evallog.obs.<runId>` 옵션 페이지만, 접두어 `sc.evallog.`, `sc.settings` 불가침)는 불변이며 R6의 "화면별 대기열"은 락의 폴백으로 남는다. 구현 제약 4("관찰 중 창 1개·사이드패널 1개", 엔진 `persist()` 불변)도 그대로다. 시험: 락 안 읽기-수정-쓰기, 폴백 경로, 두 락 사용자 직렬화(가짜 `navigator.locks`). 사이드패널↔서비스 워커 사이는 T1 통합 시험으로 확인한다(미검증으로 기록).
+History: R6(D1 run 2 = B, 화면별 promise 대기열)을 구체적 반증(실측: 확장 페이지 2개 × 30건, 대기열만 30/60, 락 60/60)으로 다시 열어 락을 추가했다. 이전 값과 완전한 질문·답변은 위 R6 기록에 보존한다.
+
+### R13: 어려운 run이 결정 모집단에서 사라지는 경로 (F6)
+Finding: F6 [P1] (confidence: 9/10) `sidepanel/panel.js:538-541`(resolve 실패는 guidance 세션만 blocked, recipe 세션은 running 유지), `sidepanel/panel.js:833-844`(`onRemoved`는 패널이 열려 있을 때만 동작), `ceo-review.md:113`(실행 중 내보내기는 in_progress 표기, 완주율 분모 제외), `ceo-review.md:755`(abandoned는 탭·세션이 없을 때만), `lib/providers.js:38,59,93`(timeout 없음) — 탭이 열린 채 막힌 run은 종결되지 않고 분모에서 빠진다. 처음 로그 쓰기가 실패한 run은 기록 자체가 없다. reviewer: codex(outside voice), eng-review(코드 확인)
+Plan baseline: `in_progress` run은 내보내기에서 표기하고 완주율 분모에서 제외(CEO 리뷰 Section 4, 계획). abandoned = `in_progress` run의 tabId가 열린 탭에 없거나 세션이 없음(run 2 구현 제약 2). 종결 결과 `crashOrHang`은 구현 제약 5(관찰자가 체크시트에서 종결). 승인: CEO 리뷰 D19(쓰기 실패 배너), D15(체크시트). 분모 제외 규칙 자체는 개별 승인 없음(계획 기준).
+Runtime evidence: 코드로 확인(위 확인 표 F6). 예: 참가자가 막힌 채 20분 뒤 포기하고 관찰자가 세션을 끝내면 recipe 세션은 `running`, 탭은 열려 있어 abandoned 판정에 걸리지 않고 `in_progress`로 남아 분모에서 제외된다. 실제 Chromium 시험은 하지 않았다(코드 읽기, 프로브 한계).
+Comparison grid:
+| Commitment | Current | A 계획 run 명단 + 종결 처리 + 불완전 판정 | B 종결 처리만 | C 현행(분모 제외) |
+|---|---|---|---|---|
+| 결정 모집단 | 기록된 종결 run | 사전에 정한 계획 run 명단(dev 10 + nondev 10 = 20회, `runner-first.md:28-42`)의 모든 run | 기록된 run 중 종결된 것 | 기록된 종결 run |
+| `in_progress` 처리 | 분모 제외 | 판정 불가: 하나라도 `in_progress`이거나 기록이 없으면 판정 "불완전(INCOMPLETE)" | 하나라도 `in_progress`이면 `eval-report`가 계산을 거부 | 분모 제외 |
+| 기록이 아예 없는 계획 run(첫 쓰기 실패 등) | 감지 못 함 | 감지(명단 대비 누락) → 불완전 | 감지 못 함 | 감지 못 함 |
+| 종결 방법 | 이벤트로 자동(탭·세션 없음)만 | 이벤트 + 체크시트 종결 동작: 관찰자가 `in_progress` run을 `abandoned` 또는 `crashOrHang`으로 종결(구현 제약 5) | A와 같은 종결 동작 | 이벤트로만 |
+| 허위 완주·분모 정의(R01~R06 16회) | 승인됨 | 불변 | 불변 | 불변 |
+| 러너 timeout | 없음(측정 대상, 구현 제약 5) | 불변 | 불변 | 불변 |
+| 추가 작업(CC) | — | ~25분(명단 파일, 종결 동작, `eval-report` 판정 + 시험 4행) | ~15분 | 0 |
+Question D7 (run 3):
+D7 (run 3) — 막혀서 끝나지 않은 run이 결과표에서 사라지지 않게 할까요? (R13)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, T1·T6·T7(run 종결과 결과 계산)
+ELI10: 참가자가 막힌 채로 포기하면 탭은 그대로 열려 있고 앱의 레시피 세션도 "진행 중"으로 남습니다. 지금 계획은 "진행 중인 run은 완주율에서 뺀다"여서, 가장 어려웠던 run이 조용히 계산에서 빠집니다. 그러면 20번 중 몇 번이 실제로 끝났는지가 부풀려집니다. 또 로그 쓰기가 처음부터 실패한 run은 기록 자체가 없어 빠졌는지도 알 수 없습니다.
+Stakes if we pick wrong: 막힌 run이 빠진 채로 완주율이 계산되어, 실제로는 못 끝낸 도구를 "충분히 끝난다"고 판단해 B(레지스트리)에 투자하게 됩니다.
+Recommendation: A because 미리 정한 20회 명단과 대조하면 기록이 아예 없는 run까지 잡히고 관찰자가 막힌 run을 직접 종결하게 해, 하나라도 비면 "불완전"으로 판정을 막아 어려운 run이 빠진 결과로 결정할 수 없게 한다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) 계획 run 명단 + 종결 처리 + 불완전 판정 (recommended)
+  ✅ 기록이 없는 run과 막힌 run을 모두 잡고 하나라도 비면 판정을 막아 빠진 데이터로 결정하지 못하게 한다
+  ❌ 명단 파일과 체크시트 종결 동작이 새로 생기고 관찰자가 모든 run을 종결해야 판정이 나와 운영 부담이 늘어난다
+B) 종결 처리만
+  ✅ 체크시트 종결 동작만 더해 구현이 작고 막힌 run은 종결을 강제해 잡을 수 있다
+  ❌ 기록이 아예 없는 run은 여전히 감지하지 못해 첫 쓰기 실패 같은 침묵 유실이 남는다
+C) 현행(분모 제외)
+  ✅ 추가 작업이 없고 승인된 계획 문구를 그대로 둔다
+  ❌ 막힌 run이 계산에서 조용히 빠져 완주율이 부풀려지고 이를 알아챌 장치가 없다
+Net: 명단 대조까지 하는 완전한 방어(A)냐, 종결만 강제하는 절충(B)이냐, 막힌 run이 빠지는 현행(C)이냐.
+Header: run 완전성
+Options:
+A) 계획 run 명단 + 종결 처리 + 불완전 판정 (recommended)
+`runner-first.md:28-42`의 20회(dev 10 + nondev 10) 명단을 파일로 두고 `eval-report`가 명단의 모든 run이 종결 상태인지 확인합니다. 체크시트에 관찰자 종결 동작(`in_progress` run을 `abandoned` 또는 `crashOrHang`으로 종결)을 추가합니다. 명단에 없는 기록이거나 기록이 없는 run, 또는 `in_progress`가 하나라도 있으면 판정을 "불완전(INCOMPLETE)"으로 출력하고 B 진행을 내지 않습니다. 허위 완주·분모 정의와 러너(timeout 없음)는 불변입니다.
+B) 종결 처리만
+체크시트에 관찰자 종결 동작을 추가하고 `in_progress` run이 하나라도 있으면 `eval-report`가 계산을 거부합니다. 계획 명단 대조는 하지 않습니다. 허위 완주·분모 정의와 러너는 불변입니다.
+C) 현행(분모 제외)
+`in_progress` run은 표기만 하고 완주율 분모에서 제외합니다. 문서와 코드 계획은 바뀌지 않습니다.
+
+State: approved
+Actual answer: D7 (run 3) = A) 계획 run 명단 + 종결 처리 + 불완전 판정 (권장안 선택)
+Accepted scope: (1) `runner-first.md:28-42`의 20회(dev 10 + nondev 10) 계획 명단을 `test/fixtures/planned-runs.json`(또는 `docs/` 아래 데이터 파일, 구현자 선택)으로 두고, `scripts/eval-report.js`가 명단의 모든 run이 종결 상태(`completed`/`abandoned`/`rejected`/`crashOrHang`)이고 기록이 있는지 확인한다. (2) 체크시트(T6)에 관찰자 종결 동작을 추가한다: `in_progress` run을 `abandoned` 또는 `crashOrHang`으로 종결(구현 제약 5). 종결은 `sc.evallog.obs.<runId>`에만 쓰고 run 키를 바꾸지 않는다(R6 키 소유 규칙 유지). (3) 명단에 없는 기록, 기록이 없는 계획 run, 또는 `in_progress` run이 하나라도 있으면 판정을 "불완전(INCOMPLETE)"으로 출력하고 B 진행을 내지 않는다(R8 피벗 우선 판정도 INCOMPLETE에서는 내지 않음). (4) 이전 계획의 "`in_progress`는 분모 제외"(CEO 리뷰 Section 4)는 이 규칙으로 대체된다. 허위 완주·분모(R01~R06 16회) 정의와 러너(timeout 없음)는 불변. 시험: 명단 누락, `in_progress` 잔존, 정상 완전, 종결 동작이 run 키를 바꾸지 않음 4행.
+History: —
+
+### R14: A 단계 보안 통제로 적힌 recipe-intro와 goal 진입 권한 요청이 코드에 없다 (F8)
+Finding: F8 [P1] (confidence: 9/10) `runner-first.md:102`, `sidepanel/panel.html`(템플릿은 `tpl-recipe-pick`, `tpl-recipe-done`뿐), `sidepanel/panel.js:222-226`(칩 클릭 → `grantCurrentTabPermission()` → `startRecipeFlow`), `sidepanel/panel.js:506`(다음 goal은 `startFlow(result.nextGoal.label)`, 제스처 없음), `sidepanel/panel.js:482,599`(실행 URL은 `currentTab.url`) — 입력 설계 문서가 A 단계에 "적용된다"고 적은 통제 중 "`recipe-intro`가 모든 goal 표시"와 "goal 진입 시 사용자 제스처 안에서 해당 origin 권한 요청"은 구현돼 있지 않고, `goal.site`는 런타임에서 참조 0건(grep)이다. reviewer: codex(outside voice), eng-review(코드 확인)
+Plan baseline: `runner-first.md:102` = "A 단계에 적용되는 보안 통제: 번들된 손수 쓴 레시피만 실행, `recipe-intro`가 모든 goal 표시, goal 진입 시 사용자 제스처 안에서 해당 origin 권한 요청(R4.3), payload는 LLM 요청에 불포함". 후자 둘은 "있음"으로 기술됨. 승인: 입력 설계 APPROVED(사실 서술 오류), D8(panel.js 무검증)은 불변.
+Runtime evidence: 코드로 확인(위 확인 표 F8). 현재 실제 동작: 칩 클릭 시 현재 탭 origin의 권한을 요청하고 바로 실행. 첫 goal이든 다음 goal이든 현재 탭에서 실행하며 레시피가 지정한 사이트로 이동시키지 않는다. 시작 URL이 http(s)가 아니면 `entry` 상태("설정 화면을 열어 주세요")로 대기(`panel.js:602-610`). A 단계는 번들 레시피 + 테스트 전용 계정이라 이 통제 부재의 보안 영향은 낮다(`ceo-review.md:103` 위협 표).
+Comparison grid:
+| Commitment | Current | A 정정 + B 이전 통제로 이동 | B recipe-intro와 권한 흐름 구현 | C 현행 유지(문서 그대로) |
+|---|---|---|---|---|
+| `runner-first.md:102`의 서술 | 존재하지 않는 통제를 "적용"으로 기술 | "A 단계에 적용"에서 두 항목을 빼고 현재 실제 동작을 정확히 기술 | 서술을 구현에 맞게 유지 | 틀린 채 유지 |
+| recipe-intro·goal 진입 권한 요청 | 없음 | 없음, "B 이전 확정 요구"로 이동 | `panel.html`·`panel.js`에 intro 화면(전 goal 표시)과 goal 시작 시 사용자 제스처 안 origin 권한 요청 추가 | 없음 |
+| 관찰 절차(T11 체크리스트) | 시작 준비 항목 없음 | 레시피별 시작 URL을 관찰자가 미리 열고 로그인된 테스트 계정과 권한 대화상자 설명을 준비하는 항목 추가 | 같은 항목(시작 URL 준비는 intro가 대체 못 함) | 없음 |
+| 코드 변경 | — | 없음(문서·체크리스트만) | `sidepanel/panel.html`, `sidepanel/panel.js`(D8 무검증 상태 유지) | 없음 |
+| 추가 작업(CC) | — | ~10분 | ~60분 + 수동 확인 불가(D8) | 0 |
+Question D8 (run 3):
+D8 (run 3) — "recipe-intro와 goal 진입 권한 요청"이 코드에 없는 것을 어떻게 다룰까요? (R14)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, 입력 설계 `runner-first.md:102`의 A 단계 보안 통제
+ELI10: 입력 설계 문서는 "레시피를 시작하기 전에 목표 목록을 보여 주는 화면(recipe-intro)이 있고, 목표를 시작할 때마다 그 사이트 접근 권한을 묻는다"고 적었습니다. 코드를 보니 그 화면은 없고, 칩을 누르면 지금 열려 있는 탭의 권한을 묻고 곧바로 실행합니다. 레시피가 말하는 사이트로 이동시키지도 않습니다. 이 단계는 개발자가 만든 레시피와 테스트 계정만 쓰므로 위험은 낮지만, 문서가 없는 통제를 있다고 말하고 있습니다.
+Stakes if we pick wrong: 문서를 그대로 두면 B 단계 보안 검토가 "이미 있는 통제"를 믿고 지나가고, 구현을 A에 끼우면 검증 없는 panel.js 변경(D8)이 더 늘어납니다.
+Recommendation: A because 없는 통제를 있다고 적은 사실 오류를 고치고 B 이전 필수 요구로 옮겨 B 검토가 놓치지 않게 하며, 검증 수단이 없는 panel.js 변경(D8)을 더 늘리지 않는다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) 정정 + B 이전 통제로 이동 (recommended)
+  ✅ 문서가 실제 동작과 일치하고 B 이전 필수 요구로 남아 B 보안 검토가 이 통제를 놓치지 못한다
+  ❌ A 단계에서는 goal 목록 사전 표시와 goal별 권한 요청 없이 관찰하므로 참가자 흐름이 최종 제품과 달라진다
+B) recipe-intro와 권한 흐름 구현
+  ✅ A 단계 관찰이 최종 제품에 가까운 흐름(목록 표시, goal 진입 권한)으로 진행된다
+  ❌ 자동·수동 검증이 없는 panel.js 변경이 늘고(D8) 관찰이 구현 일정에 묶이며 A 단계 범위가 커진다
+C) 현행 유지(문서 그대로)
+  ✅ 문서와 코드 계획이 바뀌지 않아 추가 작업이 없다
+  ❌ 존재하지 않는 통제를 있다고 적은 채로 남아 B 보안 검토에서 잘못된 전제로 쓰일 수 있다
+Net: 문서를 사실에 맞추고 통제를 B로 미루는 작은 수정(A)이냐, 지금 구현해 관찰 흐름을 맞추는 큰 수정(B)이냐, 틀린 채 두느냐(C).
+Header: A 단계 통제
+Options:
+A) 정정 + B 이전 통제로 이동 (recommended)
+`runner-first.md:102`의 "A 단계에 적용되는 보안 통제"에서 "`recipe-intro`가 모든 goal 표시"와 "goal 진입 시 사용자 제스처 안에서 origin 권한 요청"을 빼고 현재 실제 동작(칩 클릭 시 현재 탭 origin 권한 요청 후 바로 실행, 레시피 사이트로 이동시키지 않음)을 정확히 적습니다. 두 항목은 "B 단계로 미루는 통제(확정 요구)"로 옮깁니다. 관찰 운영 체크리스트(T11)에 레시피별 시작 URL 사전 오픈, 로그인된 테스트 계정, 권한 대화상자 설명 항목을 추가합니다. 코드 변경은 없습니다.
+B) recipe-intro와 권한 흐름 구현
+A 단계에 `sidepanel/panel.html`·`sidepanel/panel.js`로 recipe-intro 화면(전 goal 표시)과 goal 시작 시 사용자 제스처 안의 origin 권한 요청을 구현합니다. 서술은 구현에 맞게 유지하고 T11 체크리스트에 시작 URL 준비 항목을 추가합니다. panel.js 변경은 D8에 따라 자동·수동 검증이 없습니다.
+C) 현행 유지(문서 그대로)
+`runner-first.md:102`를 바꾸지 않습니다. 문서와 코드 계획은 바뀌지 않습니다.
+
+State: approved
+Actual answer: D8 (run 3) = A) 정정 + B 이전 통제로 이동 (권장안 선택)
+Accepted scope: `runner-first.md:102`의 "A 단계에 적용되는 보안 통제"에서 "`recipe-intro`가 모든 goal 표시"와 "goal 진입 시 사용자 제스처 안에서 origin 권한 요청(R4.3)"을 빼고, 현재 실제 동작을 정확히 적는다: 칩 클릭 시 현재 탭 origin의 권한을 사용자 제스처 안에서 요청한 뒤 바로 실행하며(`panel.js:222-226`), 다음 goal은 같은 탭에서 `startFlow`로 이어지고(`panel.js:506`) 레시피가 지정한 사이트로 이동시키지 않는다(`goal.site` 런타임 참조 없음). 두 항목은 같은 문서 "B 단계로 미루는 통제(확정 요구)"로 옮긴다. 관찰 운영 체크리스트(T11, `docs/observation-checklist.md`)에 추가: 레시피별 시작 URL을 관찰자가 미리 열기, 로그인된 테스트 계정 준비, 권한 대화상자 설명, 시작 화면이 `entry` 상태(시작 URL이 http(s)가 아님)면 관찰자가 안내만 하고 레시피를 대신 진행하지 않기. 코드 변경 없음. D8(panel.js 무검증)은 불변.
+History: —
+
+### R15: 관찰자 체크시트를 옵션 페이지 UI로 만들 것인가 (F10)
+Finding: F10 [P2] (confidence: 6/10) `ceo-review.md:629-634`(T6 옵션 체크시트 human ~4h / CC ~30min), `ceo-review.md:159`(체크시트 필드 약 10개), `runner-first.md:28-42`(5명 × 2회 = 관찰 10회차, 총 20회) — "5명·20회 규모에는 미리 정한 수기 체크시트 + 최소 계측이 평가 서브시스템보다 훨씬 단순하다". 전략 판단이며 코드로 반증할 수 없다(medium confidence, 증거는 규모 대비 구현 크기). reviewer: codex(outside voice)
+Plan baseline: 옵션 페이지 관찰자 체크시트와 JSON 내보내기를 만든다(D15 = A, 승인, `ceo-review.md:34`). 관찰자 판정은 `sc.evallog.obs.<runId>`(옵션 페이지만 씀, R6·R12). 이 run에서 체크시트에 종결 동작(R13)과 참가자 요약(R9)이 추가됐다.
+Runtime evidence: 코드 아님. evallog 코어(엔진 이벤트, `resolverMs`, `guardRejects` 이유 코드, `skippedSteps`, `procedureKind`)는 사이드패널 내부에만 있는 값이라 관찰자가 손으로 적을 수 없으므로 어느 선택에서도 남는다(`panel.js:535`, `engine.js:135-139`). 줄일 수 있는 것은 관찰자 입력 수단(옵션 페이지 UI)뿐이다. 반증 부재: 이 계획의 구체적 오류가 UI에서 나온 증거는 없다.
+Comparison grid:
+| Commitment | Current(D15 승인) | A 체크시트를 CSV 시트로 대체 | B 옵션 페이지 UI 유지 | C 조사 후 결정 | D 이 제안만 보류 |
+|---|---|---|---|---|---|
+| 관찰자 입력 수단 | 옵션 페이지 체크시트 UI | `docs/observation-sheet.csv` 템플릿(스프레드시트)에 관찰자가 입력, `eval-report`가 CSV와 내보낸 run JSON을 `runId`로 합침 | 옵션 페이지 체크시트 UI | 승인된 UI 유지(조사 결과 전까지) | 승인된 UI 유지 |
+| 관찰자 판정 저장 | `sc.evallog.obs.<runId>`(옵션 페이지만 씀) | 없음(CSV 파일). 옵션 페이지 쓰기 경로와 obs 키 제거 | `sc.evallog.obs.<runId>` | 불변 | 불변 |
+| 종결 동작(R13)·참가자 요약(R9) | 체크시트에 포함 | CSV 열(`final_outcome`)과 `eval-report` 계산 | 체크시트에 포함 | 불변 | 불변 |
+| evallog 코어(엔진 이벤트, 이유 코드, 락·키 구조 run 쪽) | 승인됨 | 불변 | 불변 | 불변 | 불변 |
+| 진행 중 run 저장 거부, 재저장 | UI와 시험이 보장 | 없음(수기 입력, 오입력은 `eval-report`가 `runId` 불일치로 보고) | UI와 시험이 보장 | 불변 | 불변 |
+| 작업 | T6 human ~4h / CC ~30min | T6 삭제, CSV 템플릿 + `eval-report` CSV 합치기 ~20min | 변경 없음 | 한 장 메모(코드 없음) | 변경 없음 |
+Question D9 (run 3):
+D9 (run 3) — 관찰자 체크시트를 옵션 페이지 화면으로 만들지, 스프레드시트로 대신할까요? (R15)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, T6(옵션 페이지 관찰자 체크시트)
+ELI10: Codex는 "관찰 대상이 5명, 20번뿐인데 관찰자용 입력 화면까지 만드는 건 과하다. 미리 정한 스프레드시트에 적는 편이 훨씬 단순하다"고 했습니다. 화면은 약 10개 칸에 저장·다시 저장·진행 중 run 거부·종결 버튼까지 있어 코드와 시험이 늘고, 스프레드시트는 코드가 거의 없지만 run 번호를 손으로 맞춰야 합니다. 앱 안에서만 알 수 있는 값(응답 시간, 거절 이유, 건너뛴 단계 수)은 어느 쪽이든 앱이 자동으로 기록합니다.
+Stakes if we pick wrong: 화면을 유지하면 관찰 전에 만들 것이 늘어 관찰 시작이 늦어지고, 스프레드시트로 바꾸면 오입력이 침묵 속에 판정을 흔들 수 있습니다. 둘 다 이 계획의 다른 승인 항목은 바꾸지 않습니다.
+Recommendation: B because 이 계획의 구체적 오류가 화면에서 나온 증거가 없고(전략적 지적일 뿐) 승인된 D15를 구현하는 비용이 CC 약 30분으로 작은 반면, 손 입력은 `runId` 불일치 같은 침묵 오류를 새로 만든다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) 체크시트를 CSV 시트로 대체
+  ✅ 옵션 페이지 UI와 obs 키·저장 시험이 사라져 구현이 줄고 관찰 시작 전에 만들 것이 적어진다
+  ❌ run 번호와 판정을 손으로 맞춰야 해 오입력이 생기고 진행 중 run 저장 거부 같은 보호 장치가 없다
+B) 옵션 페이지 UI 유지 (recommended)
+  ✅ 승인된 D15 그대로 판정이 `runId`에 묶이고 진행 중 run 거부와 종결 동작을 시험으로 보장한다
+  ❌ 약 10개 칸과 종결·요약 화면까지 만들어야 해 코드와 시험이 늘고 옵션 페이지 변경은 수동 확인에 의존한다
+C) 조사 후 결정
+  ✅ 코드 없이 한 장 메모로 입력 시간과 오류 위험을 비교해 근거를 얻고 결정을 미룰 수 있다
+  ❌ 결정이 늦어져 T6와 관찰 일정이 막히고 조사 결과가 증거 없는 판단과 크게 다르지 않을 수 있다
+D) 이 제안만 보류
+  ✅ 승인된 UI를 그대로 두고 첫 2명 관찰 뒤에 다시 보면 실제 사용 경험으로 판단할 수 있다
+  ❌ 관찰 중에는 체크시트가 이미 필요해서 보류해도 T6를 먼저 만들어야 하고 이후 변경 비용이 남는다
+Net: 승인된 화면을 그대로 만들어 오입력을 막느냐(B), 스프레드시트로 구현을 줄이느냐(A), 판단을 미루느냐(C, D).
+Header: 체크시트 형태
+Options:
+A) 체크시트를 CSV 시트로 대체
+옵션 페이지 관찰자 체크시트 UI(T6)를 만들지 않고 `docs/observation-sheet.csv` 템플릿에 관찰자가 입력합니다. `eval-report`가 CSV와 내보낸 run JSON을 `runId`로 합치고 불일치는 보고합니다. `sc.evallog.obs.<runId>` 키와 옵션 페이지 쓰기 경로를 제거하고 종결 동작(R13)·참가자 요약(R9)은 CSV 열과 `eval-report` 계산으로 옮깁니다. evallog 코어와 나머지 승인 항목은 불변입니다.
+B) 옵션 페이지 UI 유지 (recommended)
+승인된 D15 그대로 옵션 페이지에 관찰자 체크시트(저장·재저장·진행 중 run 거부, R13 종결 동작, R9 참가자 요약)와 JSON 내보내기를 만듭니다. 변경 없음.
+C) 조사 후 결정
+코드 없이 체크시트 UI 필드·화면 수와 CSV 방식의 입력 시간·오류 위험을 비교한 한 장 메모를 만듭니다. 조사 결과가 나오기 전까지 승인된 UI를 유지하고 어떤 구현도 승인하지 않습니다.
+D) 이 제안만 보류
+이 축소 제안을 보류하고 승인된 UI(D15)를 그대로 둡니다. 다른 항목은 바꾸지 않습니다. 이 제안은 미해결로 남습니다.
+
+State: approved
+Actual answer: D9 (run 3) = B) 옵션 페이지 UI 유지 (권장안 선택)
+Accepted scope: 승인된 D15 그대로 옵션 페이지에 관찰자 체크시트와 JSON 내보내기를 만든다. 이 run에서 확정된 체크시트 내용을 포함한다: 저장·재저장·진행 중 run 저장 거부, R13의 관찰자 종결 동작(`in_progress` run을 `abandoned`/`crashOrHang`으로 종결), R9의 참가자 요약("코딩된 회차 n/2" 표시), R10의 Q3 명칭("혼자 할 수 있음"), 구현 제약 3·11의 감사 화면 다섯 곳(instruct, goalLabel, recoverText, 신뢰 배지, step.onFail)별 "관측되지 않은 라벨" 코딩(Codex 재검토 후 네 곳에서 확장). 관찰자 판정은 `sc.evallog.obs.<runId>`(옵션 페이지만 씀)에 저장하고 R12의 락을 쓴다. 변경 없음(축소 제안은 채택하지 않음). evallog 코어는 앱 안에서만 아는 값(`resolverMs`, `guardRejects` 이유 코드, `skippedSteps`, `procedureKind`)을 기록하므로 어느 경우에도 유지된다.
+History: Codex의 "수기 체크시트 + 최소 계측" 제안을 구체적 반증 없이 보류하지 않고 이 질문으로 다뤘다. 구체적 오류가 UI에서 나온 증거가 없어 승인된 D15를 유지했다.
+
+### R16: TODOS.md 후보 — 러너가 "goal 달성"과 "다음 화면 도달"을 구분 (F3)
+Finding: TODO 제안 (confidence: 9/10) `lib/procedure-generator.js:28-30`, `sidepanel/panel.js:496`, `lib/recipe-engine.js:101-116` — 화면 이동 전용 절차가 끝나면 goal이 `done`이 되는 러너 계약의 빈틈. A 단계는 측정만 하고(R11 = A) 러너를 고치지 않으므로 수정은 A 데이터가 나온 뒤의 별도 작업이다. reviewer: codex(outside voice), eng-review
+Plan baseline: `TODOS.md`에 이 항목 없음(기존 3개: H4 실측, 주입 내성 시험, panel.js jsdom). R11 = A는 기록·보고만 승인했고 러너 변경은 승인하지 않았다.
+Runtime evidence: 코드로 확인(위 확인 표 F3). 수정 방향(예: 이동 전용 절차가 끝나면 goal을 `in_progress`로 두고 새 화면에서 다시 해석)의 실현 가능성은 시험하지 않았다(unknown).
+Comparison grid:
+| Commitment | Current | A TODOS.md에 추가 | B 건너뜀 |
+|---|---|---|---|
+| `TODOS.md` | 항목 없음 | 새 항목 1개 추가 | 변경 없음 |
+| 러너 코드(`procedure-generator.js`, `panel.js`, `recipe-engine.js`) | 불변(측정 대상, R11 = A 승인) | 불변 | 불변 |
+| R11 승인 범위(기록·보고) | 승인됨 | 불변 | 불변 |
+| 추가 작업(CC) | — | ~5분(항목 작성) | 0 |
+- "지금 구현"(TODO 표준 선택지 C)은 제시하지 않는다. 승인된 R11 = A("러너 불변, 기록·보고만")를 바꾸는 선택이라 이 질문의 다른 승인 값을 고정한다는 규칙(비교 격자 검사 1)과 충돌한다. 러너 변경을 원하면 R11을 다시 여는 별도 질문으로 다룬다.
+Question D10 (run 3):
+D10 (run 3) — "목표 달성"과 "화면 이동"을 구분하는 러너 수정을 TODOS.md에 남길까요? (R16)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, TODOS.md 후보 1/2
+ELI10: 지금 러너는 "설정 화면으로 가는 링크를 눌렀다"를 "목표를 이뤘다"와 똑같이 처리합니다. 이번 A 단계는 러너를 바꾸지 않고 이 문제가 얼마나 생기는지만 기록합니다(R11). 그 데이터가 나오면 러너를 고쳐야 할 텐데, 그 일을 적어 두지 않으면 관찰이 끝난 뒤 잊힙니다.
+Stakes if we pick wrong: 적어 두지 않으면 B 단계에서 같은 결함이 그대로 제품에 들어가고, 지금 고치면 A 단계가 측정하려던 러너 동작이 바뀌어 결과를 믿을 수 없게 됩니다.
+Recommendation: A because 러너를 바꾸지 않고 측정한다는 A 단계의 전제를 지키면서 수정 필요성을 데이터가 나오는 순간 바로 이어받을 수 있게 남기고, 5분 비용이라 건너뛰는 것보다 이득이 크다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) TODOS.md에 추가 (recommended)
+  ✅ 러너를 건드리지 않아 A 단계 측정이 오염되지 않고 수정 필요성이 데이터와 함께 이어진다
+  ❌ 수정이 B 이전으로 밀려 A 단계에서 화면 이동 전용 절차로 인한 완주 부풀림은 그대로 관찰된다
+B) 건너뜀
+  ✅ 문서가 늘지 않고 R11의 기록·보고만으로 충분하다고 판단할 수 있다
+  ❌ A 데이터가 나온 뒤 수정할 일을 아무도 적어 두지 않아 B 단계 설계에서 빠질 수 있다
+Net: 측정을 오염시키지 않고 수정만 적어 두느냐(A), 적지 않느냐(B). "지금 구현"은 승인된 R11(러너 불변)과 충돌해 제시하지 않습니다.
+Header: TODO 추가 1
+Options:
+A) TODOS.md에 추가 (recommended)
+`TODOS.md`에 새 항목(What: 러너가 "goal 달성"과 "다음 화면 도달"을 구분. Why: 화면 이동 전용 절차 종료가 goal `done`으로 집계됨. Context: `procedure-generator.js:28-30`, `panel.js:496`, `recipe-engine.js:101-116`, R11 `procedureKind` 데이터. Effort M, Priority P2, Depends on A 단계 관찰 결과)을 추가합니다. 러너 코드는 바꾸지 않습니다.
+B) 건너뜀
+`TODOS.md`를 바꾸지 않습니다. 러너 코드도 바꾸지 않습니다.
+
+State: approved
+Actual answer: D10 (run 3) = A) TODOS.md에 추가 (권장안 선택)
+Accepted scope: `TODOS.md`의 "Recipe Runner (A 단계 이후)" 절에 새 항목 "러너가 'goal 달성'과 '다음 화면 도달'을 구분" 추가(What, Why, Context = `procedure-generator.js:28-30`·`panel.js:496`·`recipe-engine.js:101-116`·R11 `procedureKind` 데이터, Effort M, Priority P2, Depends on A 단계 관찰 결과). 러너 코드는 바꾸지 않는다(R11 = A 유지).
+History: —
+
+### R17: TODOS.md 후보 — B 이전 러너 견고화 묶음 (F4, F6, F7)
+Finding: TODO 제안 (confidence: 8/10) `lib/guard.js:86-102`(따옴표 구간만 교차 검증), `sidepanel/panel.js:331`(`goalLabel` 무검사 표시), `lib/recover.js:12-31`(복구 문구 guard 미경유), `lib/providers.js:38,59,93`(fetch에 timeout 없음), `lib/recipe-engine.js:14,50-58`(세션 맵 전체를 한 키에 씀, 인스턴스 2개 프로브로 되살림 재현) — A 단계는 기존 러너를 측정하므로 고치지 않지만, 실제 사용자 콘텐츠를 읽는 B 이전에는 필요한 세 가지다. reviewer: codex(outside voice), eng-review
+Plan baseline: 기존 `TODOS.md`의 "B 진행 게이트에 페이지 콘텐츠 주입 내성 시험 추가"(TD1)는 guard가 막지 못하는 주입을 시험하는 항목이고, 이 세 가지(표시 문구 검사 범위, 요청 timeout, 세션 저장 격리)는 기록에 없다. R14 = A는 recipe-intro·권한 통제를 "B 단계로 미루는 통제(확정 요구)"로 옮겼고 그 목록은 `runner-first.md`에 있다(TODOS.md 아님).
+Runtime evidence: 코드 읽기와 프로브(위 확인 표 F4, F6, F7). 세 가지 수정의 방식과 크기는 시험하지 않았다(unknown).
+Comparison grid:
+| Commitment | Current | A TODOS.md에 추가 | B 건너뜀 |
+|---|---|---|---|
+| `TODOS.md` | 항목 없음(TD1은 별개) | 새 항목 1개(세 가지를 한 항목에 나열) 추가 | 변경 없음 |
+| 러너 코드(`guard.js`, `panel.js`, `recover.js`, `providers.js`, `recipe-engine.js`) | 불변(측정 대상) | 불변 | 불변 |
+| 기존 TD1(주입 내성 시험)과 R14 B 이전 통제 목록 | 승인됨 | 불변 | 불변 |
+| 추가 작업(CC) | — | ~5분(항목 작성) | 0 |
+- "지금 구현"은 제시하지 않는다. R11 = A(러너 불변, 측정 대상)와 D8(panel.js 무검증)을 바꾸는 선택이라 비교 격자 검사 1과 충돌한다(R16과 같은 이유).
+Question D11 (run 3):
+D11 (run 3) — B 단계 전에 필요한 러너 견고화 세 가지를 TODOS.md에 남길까요? (R17)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, TODOS.md 후보 2/2
+ELI10: 지금 러너에는 B 단계(진짜 사용자 콘텐츠를 읽는 단계) 전에 고쳐야 할 구멍이 세 개 있습니다. (1) 안내 문구 중 화면 제목과 복구 문구는 "관측된 라벨만" 검사를 거치지 않습니다. (2) AI 요청에 시간 제한이 없어 응답이 안 오면 끝없이 기다릴 수 있습니다. (3) 레시피 세션 저장이 창이 둘이면 서로를 덮어씁니다. A 단계는 현재 러너를 있는 그대로 측정하므로 고치지 않지만, 이 목록을 안 남기면 B에서 놓칠 수 있습니다.
+Stakes if we pick wrong: 적어 두지 않으면 B 보안·안정성 검토가 "이미 막혀 있다"고 믿고 지나가 실제 콘텐츠에서 문제가 터지고, 지금 고치면 A 단계가 측정하려던 러너 동작이 바뀝니다.
+Recommendation: A because 세 가지 모두 코드로 확인된 구멍이고 A 단계에서 고치지 않는 것이 맞아, 5분 비용으로 B 이전 작업 목록에 확실히 남기는 편이 기억에 맡기는 것보다 낫다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) TODOS.md에 추가 (recommended)
+  ✅ 코드로 확인된 세 구멍이 B 이전 작업으로 남아 B 보안·안정성 검토가 놓치지 못한다
+  ❌ 세 가지를 한 항목에 묶어 나중에 규모와 우선순위를 다시 나눠야 하고 A 단계는 이 구멍들을 안은 채 측정한다
+B) 건너뜀
+  ✅ 문서가 늘지 않고 기존 TD1과 R14 B 이전 통제 목록만으로 충분하다고 볼 수 있다
+  ❌ 요청 timeout과 세션 저장 격리는 기존 목록 어디에도 없어 B 단계에서 빠질 수 있다
+Net: 코드로 확인된 세 구멍을 B 이전 작업으로 적어 두느냐(A), 기억과 기존 목록에 맡기느냐(B). "지금 구현"은 승인된 R11·D8과 충돌해 제시하지 않습니다.
+Header: TODO 추가 2
+Options:
+A) TODOS.md에 추가 (recommended)
+`TODOS.md`에 새 항목(What: B 이전 러너 견고화 — (1) `goalLabel`·복구 문구에 guard 적용, (2) provider 요청 timeout, (3) 세션 저장의 탭별 격리. Why: 실제 사용자 콘텐츠를 읽는 B 이전에 필요. Context: `guard.js:86-102`, `panel.js:331`, `recover.js:12-31`, `providers.js:38,59,93`, `recipe-engine.js:14,50-58`, TD1과 R14 통제 목록 참조. Effort L, Priority P2, Depends on A 통과)을 추가합니다. 러너 코드는 바꾸지 않습니다.
+B) 건너뜀
+`TODOS.md`를 바꾸지 않습니다. 러너 코드도 바꾸지 않습니다.
+
+State: approved
+Actual answer: D11 (run 3) = A) TODOS.md에 추가 (권장안 선택)
+Accepted scope: `TODOS.md`의 "Recipe Runner (A 단계 이후)" 절에 새 항목 "B 이전 러너 견고화" 추가(What: (1) `goalLabel`·복구 문구에 guard 적용, (2) provider 요청 timeout, (3) 세션 저장의 탭별 격리. Why: 실제 사용자 콘텐츠를 읽는 B 이전에 필요. Context = `guard.js:86-102`, `panel.js:331`, `recover.js:12-31`, `providers.js:38,59,93`, `recipe-engine.js:14,50-58`, 기존 TD1과 R14 B 이전 통제 목록 참조. Effort L, Priority P2, Depends on A 통과). 러너 코드는 바꾸지 않는다. **Codex 재검토 후 (1)에 단계 힌트 `step.onFail`(`panel.js:342-345`, guard 미검사)을 포함한다(구현 제약 11, TODOS.md 반영).**
+History: 재검토에서 `step.onFail` 표면이 빠졌다는 발견으로 (1)의 내용만 넓혔다(같은 TODO, 선택지 구조 불변).
+
+### R18: 세션마다 저장소를 초기화하면 20회 기록이 조각난다 (F11, Codex 재검토)
+Finding: F11 [P1] (confidence: 9/10) `runner-first.md:88`(동의 안내 "(3) 로그는 이 기기에만 저장되고 **결정 후** 삭제한다"), `runner-first.md:89`(세션 후 정리 (4) "확장 저장소 초기화"를 세션마다), `runner-first.md:73`(부분 통과 시 "같은 구성으로 한 번 더 관찰"), `ceo-review.md` T7(`eval-report` 입력 한 번에 하나의 내보내기를 가정) — 세션마다 저장소를 초기화하면 참가자별 내보내기 조각이 생기는데 합치는 규칙이 없고, 동의 문구와도 모순이다. 2차 관찰 라운드는 같은 참가자·레시피 슬롯을 다시 쓰는데 라운드 구분이 없다. reviewer: codex(outside voice, 재검토), eng-review(문서 대조)
+Plan baseline: 세션 후 정리 순서는 run 3 F9 정정으로 "내보내기 확인 → 삭제 → 키 제거 → 저장소 초기화"(작업 트리). R13 = A는 20회 계획 명단 전체를 대조한다. 한 번에 모으는 방법은 문서에 없다. 승인: 입력 설계 APPROVED(문구), R13 = D7 (run 3) A.
+Runtime evidence: 문서 모순은 라인으로 확인(위 라인). 확장 저장소 초기화가 `sc.evallog.*`를 지우는지는 구현 미정(unknown): `sc.evallog.`는 `chrome.storage.local`에 있고 `sc.settings`도 같은 저장소다(`lib/storage.js:1,22-27`).
+Comparison grid:
+| Commitment | Current | A 한 프로필에 누적, 삭제는 결정 후 | B 세션마다 내보내고 초기화, 보고 때 병합 |
+|---|---|---|---|
+| 기록 보관 | 모순(동의: 결정 후 삭제, 정리: 세션마다 초기화) | 20회를 한 전용 프로필에 누적, `sc.evallog.*`는 최종 보고서 확인 후 **한 번** 삭제 | 세션마다 내보내고 `sc.evallog.*`를 초기화 |
+| 세션 후 정리 (4) | 확장 저장소 초기화 | 진행 중 레시피 세션만 정리하고 `sc.evallog.*`는 남김(테스트 LLM 키 제거는 (3)에서 그대로) | 확장 저장소 초기화(`sc.evallog.*` 포함) |
+| 세션마다 내보내기 | 있음(F9) | 있음, 파일은 **백업**용(프로필이 망가져도 기록 보존) | 있음, 파일이 곧 입력 |
+| `eval-report` 입력 | 내보내기 하나 가정 | 마지막 내보내기 하나 | 여러 내보내기 파일을 `runId`로 합침. 같은 `runId`가 내용이 같으면 하나로, 다르면 충돌로 보고하고 판정 `INCOMPLETE` |
+| 동의 문구 (3) | 결정 후 삭제 | 그대로(결정 후 삭제) | "세션 후 내보낸 뒤 삭제"로 수정 |
+| 라운드 구분(`evalRound`, 구현 제약 13) | 없음 | 포함(공통) | 포함(공통) |
+| 추가 작업(CC) | — | ~10분(문서, 정리 항목) | ~30분(병합·중복·충돌, 시험 4행) |
+- 공통(두 선택 모두, 구현 제약 10~13): 라운드별 판정(`evalRound`, 풀링 안 함), 효과 상태 규칙, 안내 문구 감사 다섯 곳, gate 4 문구 정정.
+Question D12 (run 3):
+D12 (run 3) — 20회 기록을 어디에 어떻게 모아서 판정할까요? (R18)
+Project/branch/task: spkim/gahelper, claude/relaxed-keller-8kuzud, Stage A 기록 수집(`runner-first.md:88-89`)
+ELI10: 지금 문서는 한편으로 "기록은 결정이 난 뒤에 지운다"고 말하고, 다른 한편으로는 "세션이 끝날 때마다 확장 저장소를 초기화한다"고 말합니다. 후자를 따르면 참가자마다 기록 조각이 생기는데, 조각을 합쳐 20회로 판정하는 방법이 없습니다. 또 한 번 더 관찰할 때 같은 참가자·레시피를 다시 하게 되어 첫 번째 라운드와 섞일 수 있습니다.
+Stakes if we pick wrong: 기록이 조각난 채로 판정하면 어떤 run이 없는 것처럼 보여 판정이 INCOMPLETE가 되거나, 합치다 중복·충돌이 조용히 섞여 숫자가 틀어집니다.
+Recommendation: A because 하나의 프로필에 쌓고 판정은 한 번 내보낸 파일로 하면 합치기·중복 처리 코드가 필요 없고 동의 문구(결정 후 삭제)와 정리 절차가 일치하며, 세션마다 받는 내보내기 파일이 프로필 손상에 대한 백업이 된다.
+Note: options differ in kind, not coverage — no completeness score.
+Pros / cons:
+A) 한 프로필에 누적, 삭제는 결정 후 (recommended)
+  ✅ 합치기·중복·충돌 처리 코드가 필요 없고 동의 문구와 정리 절차가 일치하며 판정 입력이 하나로 단순하다
+  ❌ 전용 프로필 하나에 20회가 쌓여 프로필 손상 시 기록이 위험하고(내보내기 백업으로 완화), 참가자 간 깨끗한 상태는 계정·프로필 확인(제약 8)에 더 의존한다
+B) 세션마다 내보내고 초기화, 보고 때 병합
+  ✅ 세션마다 저장소가 비어 시작 상태가 깨끗하고 프로필 손상이 한 세션의 손실로 끝난다
+  ❌ 여러 내보내기를 합치는 코드와 중복·충돌 규칙이 새로 필요하고 조각 하나를 빠뜨리면 INCOMPLETE가 된다
+Net: 한 곳에 쌓고 한 번 판정하는 단순함(A)이냐, 세션마다 비우고 보고 때 합치는 격리(B)이냐. 어느 쪽도 승인된 R13 판정 규칙은 바꾸지 않습니다.
+Header: 기록 수집
+Options:
+A) 한 프로필에 누적, 삭제는 결정 후 (recommended)
+20회를 한 전용 프로필에 누적하고 `sc.evallog.*`는 최종 보고서 확인 후 한 번 삭제합니다. 세션 후 정리 (4)는 진행 중 레시피 세션만 정리하고 `sc.evallog.*`는 남깁니다(테스트 LLM 키 제거는 (3)에서 그대로). 세션마다 내보내기는 백업용으로 하고 `eval-report`는 마지막 내보내기 하나를 입력으로 씁니다. 동의 문구 (3)은 그대로입니다. `runner-first.md`와 T11 체크리스트를 갱신합니다. R13 판정 규칙은 불변입니다.
+B) 세션마다 내보내고 초기화, 보고 때 병합
+세션마다 내보내고 `sc.evallog.*`를 포함해 확장 저장소를 초기화합니다. `eval-report`가 여러 내보내기 파일을 `runId`로 합치고 같은 `runId`가 내용이 같으면 하나로, 다르면 충돌로 보고해 판정을 INCOMPLETE로 냅니다. 동의 문구 (3)을 "세션 후 내보낸 뒤 삭제"로 고치고 `eval-report`, T7 시험(병합, 중복, 충돌, 누락 조각 4행)을 갱신합니다. R13 판정 규칙은 불변입니다.
+
+State: approved
+Actual answer: D12 (run 3) = A) 한 프로필에 누적, 삭제는 결정 후 (권장안 선택)
+Accepted scope: 20회를 한 전용 프로필에 누적하고 `sc.evallog.*`는 최종 보고서 확인 후 한 번 삭제한다. `runner-first.md`의 세션 후 정리 (4)는 "진행 중 레시피 세션만 정리, `sc.evallog.*`는 남김"으로 바꾸고(테스트 LLM 키 제거는 (3)에서 그대로), 세션마다 내보내기는 프로필 손상에 대비한 백업이며 `eval-report`는 마지막 내보내기 하나를 입력으로 쓴다. 동의 문구 (3)("결정 후 삭제")은 그대로다. T11 체크리스트와 `runner-first.md`를 갱신한다. R13 판정 규칙은 불변. 구현 제약 10~13(효과 상태, 감사 다섯 곳, 게이트 4 문구, `evalRound`)은 이 선택과 무관하게 공통으로 적용한다.
+History: —
+
+**Approval readiness (run 3): PASS** — 승인된 remedy 각각이 실제 답변을 인용한다: R7 = D1 (run 3) A, R8 = D2 (run 3) A, R9 = D3 (run 3) A, R10 = D4 (run 3) A, R11 = D5 (run 3) A, R12 = D6 (run 3) B(R6 = D1 run 2 = B를 다시 열어 추가), R13 = D7 (run 3) A, R14 = D8 (run 3) A, R15 = D9 (run 3) B, R16 = D10 (run 3) A, R17 = D11 (run 3) A, R18 = D12 (run 3) A(Codex 재검토 후 추가). 재사용 승인: D3~D8(run 1), D1 (run 2). "코드 대조로 확정한 구현 제약 1~13"은 승인된 D4·D5·D15(체크시트)·D19(E1)·R6·R7~R14의 구체화이며 새 정책이 아니다(제약 5는 "A는 기존 러너를 측정한다"는 D13 = A의 귀결). 입력 설계 문서 `runner-first.md`의 문구 수정은 R7·R8·R9·R10·R13·R14·F9 답변의 Accepted scope를 그대로 옮긴 것이다.
+
+### Eng Review 재실행 결과 (run 3)
+
+**Step 0: Scope Challenge — scope accepted as-is.** 변경 파일이 8개 이상이라 복잡도 게이트가 걸리지만 D3(Smaller arrangement) 답변이 정확히 재사용됐고(계획 구조 불변, 기능 컷 제안 없음), 새 파일은 `docs/observation-checklist.md`, `test/fixtures/planned-runs.json`뿐이다. 새 아키텍처 요소는 쓰기 직렬화 락 하나이며 플랫폼 내장 `navigator.locks`를 쓴다 [Layer 1]. 실제 Chromium에서 시험했다(R12). TODOS.md는 R16·R17로 2항목을 더했다.
+
+**1. Architecture (6 issues)**
+1. [P1] (9/10) `lib/recipe-engine.js:14,50-58`, evallog R6 — 화면별 대기열만으로는 인스턴스 2개 사이의 동시 쓰기를 못 막는다(실측 30/60, 락 60/60), 세션 맵 전체 쓰기가 되살림을 만든다(프로브). → R12 / D6 (run 3) = B(락), 제약 4(창 1개).
+2. [P1] (9/10) `sidepanel/panel.js:538-541,833-844`, `lib/providers.js:38` — 막힌 run이 종결되지 않아 모집단에서 빠진다. → R13 / D7 (run 3) = A(계획 run 명단 + 종결 동작 + INCOMPLETE), 제약 5.
+3. [P1] (9/10) `lib/engine.js:4,27,135-139`, `lib/recipe-engine.js:65-73` — `skipped`가 메모리에만 있어 패널 재오픈 시 사라진다. → 제약 1·2(즉시 기록, `tabId→runId`, seq 이어 붙임).
+4. [P1] (9/10) `lib/procedure-generator.js:28-30`, `sidepanel/panel.js:496` — 화면 이동 전용 절차 종료가 goal `done`이 된다. → R11 / D5 (run 3) = A(기록·보고), TODO R16.
+5. [P1] (9/10) `sidepanel/panel.js:222-226,506`, `panel.html` — 입력 설계가 적은 recipe-intro·goal 진입 권한 요청이 없다. → R14 / D8 (run 3) = A(정정 + B 이전 통제로 이동).
+6. [P2] (9/10) `lib/engine.js:109-118`, `panel.js:629` — `skipAlreadyPassed`가 행동 없이 `done`을 만든다. → 제약 8(깨끗한 프로필 사전 확인).
+Dispositions: 1 accepted(D6), 2 accepted(D7), 3 accepted(determined 제약 1·2), 4 accepted(D5, TODO D10), 5 accepted(D8), 6 accepted(determined 제약 8).
+
+**2. Code Quality (7 issues)**
+1. [P1] (9/10) `runner-first.md:43` — 풀링한 완주 게이트는 dev 성공에 기댄다, 구간이 넓다. → R7 / D1 (run 3) = A(구간 보고, 게이트 불변; 잔여 위험 사용자 수용).
+2. [P1] (9/10) `runner-first.md:64-66` — B 진행과 피벗이 동시에 성립한다. → R8 / D2 (run 3) = A(피벗 우선).
+3. [P1] (9/10) `runner-first.md:72-77` — 참가자당 2회 응답의 집계가 없다. → R9 / D3 (run 3) = A(두 회차 모두 충족).
+4. [P1] (8/10) `runner-first.md:76-77` — Q3은 재사용 의향이 아니라 자립 가능성이다. → R10 / D4 (run 3) = A(명칭 정정, 재사용 미측정 명시).
+5. [P1] (9/10) `lib/guard.js:86-102`, `panel.js:331`, `recover.js:12-31` — "관측된 라벨만"은 런타임 불변식이 아니다. → 제약 3(관찰자가 네 화면 감사), TODO R17(견고화는 B 이전).
+6. [P1] (9/10) `ceo-review.md:221`, `runner-first.md:83` — 정리가 내보내기보다 앞이다. → 제약 6(두 문서 수정 완료).
+7. [P2] (9/10) `ceo-review.md:629-630` — T7→T10 의존 잔존, T11 독립 표기, 이벤트 식별 계약 없음. → 제약 9, Tasks·병렬화 표 갱신(L0 추가).
+(별도) [P2] (6/10) F10 측정 서브시스템 규모 → R15 / D9 (run 3) = B(옵션 페이지 UI 유지). 위 7건에는 넣지 않았다(전략 판단, medium confidence).
+- 공유 코드 평가: 새 추출 후보 없음. `withLock`은 `lib/evallog.js` 내부 함수이고 호출자가 evallog 한 곳이다(사이드패널·옵션 페이지는 evallog API를 통해 부름). 승인된 chrome 목 헬퍼(T5, D6 run 1)는 변경 없음.
+Dispositions: 1 accepted(D1, 위험 수용), 2 accepted(D2), 3 accepted(D3), 4 accepted(D4), 5 accepted(determined 제약 3 + TODO D11), 6 accepted(determined 제약 6), 7 accepted(determined 제약 9), 별도 F10 rejected(D9: 유지).
+
+**3. Test Review — run 3 추가 경로**
+```
+CODE PATHS (run 3 추가분)                                    USER FLOWS
+[+] lib/evallog.js 쓰기 경로 (R12)                            [+] 관찰 세션
+  ├── withLock: 락 안 읽기-수정-쓰기                            ├── [GAP→수동 1회] 사이드패널·옵션 페이지에서 동시 기록
+  │   ├── [GAP→계획 ★★★] 겹치는 N건이 모두 남음, seq 중복 없음   ├── [GAP→계획] 패널 닫았다 열어도 skip·runId·seq 이어짐
+  │   ├── [GAP→계획 ★★ ] navigator.locks 없으면 폴백             └── [GAP→계획] 막힌 run을 관찰자가 종결
+  │   └── [GAP→계획 ★★★] 두 락 사용자 직렬화(가짜 locks)        [+] 관찰자
+  ├── recordSkip, active 매핑                                     ├── [GAP→수동] 종결·참가자 요약 UI(options/*)
+  │   └── [GAP→계획 ★★★] 재오픈 뒤 skip·runId·seq 유지           └── [GAP→계획] 종결 동작이 run 키를 바꾸지 않음
+  ├── classifyProcedure
+  │   └── [GAP→계획 ★★★] nav_only / action / mixed / 빈 steps
+  └── 종결 동작(obs 키에만 씀)
+      └── [GAP→계획 ★★★] run 키 불변, in_progress만 종결 가능
+[+] scripts/eval-report.js
+  ├── [GAP→계획 ★★★] 구간 3개, 피벗 우선, 두 회차 모두 충족, INCOMPLETE(명단 누락·in_progress 잔존)
+  └── [GAP→계획 ★★ ] nav_only × 허위 완주 겹침 보고
+[+] sidepanel/panel.js 연결: [GAP] recordSkip 호출 지점(373-379), procedureKind·이유 코드 계측(resolveProcedure), active 매핑 — 자동·수동 검증 없음(D8) ★ CRITICAL (이월)
+COVERAGE: 신규 경로 중 현재 보호되는 것 0 (전부 계획 상태, 승인된 시험 구현 시 ★★★ 목표)
+QUALITY: 계획 중 ★★★ 7, ★★ 2  |  GAPS: 13 (계획으로 닫힘 10, 수동 확인 2, 승인된 검증 없음 1 = panel.js)
+```
+- 값 카드(신규): `Value: protects=겹치는 append가 모두 남음; fails_when=락 제거 또는 화면별 대기열로 되돌림; why_new=R6 대기열 시험은 인스턴스 2개를 못 잡음(실측 30/60); seam=none(globalThis.navigator.locks 스텁)` / `Value: protects=패널 재오픈 뒤에도 skip·runId·seq가 이어짐; fails_when=skip을 goal 종료 시점에만 읽음; why_new=recordSkip 경로가 신규; seam=none` / `Value: protects=nav_only/action/mixed 분류; fails_when=target·verify 모양 판별이 바뀜; why_new=classifyProcedure가 신규; seam=none` / `Value: protects=명단 누락·in_progress가 있으면 판정이 INCOMPLETE; fails_when=in_progress를 분모에서 제외하는 이전 규칙으로 회귀; why_new=INCOMPLETE 판정이 신규; seam=none` / `Value: protects=피벗형 4명이면 B 조건이 참이어도 피벗; fails_when=B 조건을 먼저 검사; why_new=판정 순서 규칙이 신규; seam=none`.
+- Tests made obsolete by this plan: 이전 계획의 "`in_progress` 표기·분모 제외" 시험(구현 전, 계획에만 있음)은 INCOMPLETE 시험으로 대체된다. 기존 테스트 중 폐기 대상 없음. Regression Iron Rule: 기존 `recipe-engine`·`recipe-session`·`recipe-popup` 테스트가 D6(run 1) 이전 후에도 통과해야 한다(승인된 필수 증명, 변경 없음). LLM/eval: 프롬프트를 바꾸지 않아 해당 없음.
+- Test Plan Artifact: `~/.gstack/projects/spkim-gahelper/root-claude-relaxed-keller-8kuzud-eng-review-test-plan-*.md`(run 3 갱신본, 아래 저장).
+Dispositions: 13 gaps 중 11은 승인된 범위의 시험·수동 확인으로 닫힘(R7~R15 Accepted scope), 1은 D8(무검증, 이월).
+
+**4. Performance (0 issues)** 쓰기는 상태 전이마다 한 번이고 `pollTick` 경로에는 evallog 호출이 없다. 락 대기는 같은 확장 안의 쓰기 수십 건 규모라 무시할 수준이다(실측: 30건 × 2 페이지가 같은 키에서 완료). 존재하는 provider 요청 timeout 부재는 기존 러너의 문제이며 규모는 unknown이다(측정 대상, TODO R17). No new issues.
+
+**Outside Voice (run 3).** `completed` — Codex CLI 0.160(`/codex consult`, 읽기 전용, `model_reasoning_effort=high`), 발견 10건(P1 9, P2 1), 권고 "revise Stage A before implementation". 각 발견을 코드 읽기·프로브로 확인해 R7~R17과 구현 제약으로 처리했다. **Cross-model tension:** (1) F4를 Codex는 "R6은 쓰기 주체 종류만 나눈다"로 짚었고 실측 2건으로 맞다고 확인해 R6을 다시 열었다(락 추가). (2) F6의 "provider timeout 필요"는 받아들이지 않았다: A 단계는 기존 러너를 측정하고 게이트 4가 "무한 대기 0"을 재므로 timeout을 넣으면 측정 대상이 사라진다(제약 5, 견고화는 TODO R17). (3) F1의 "통계 검증 아님"은 받아들여 문서 표기와 구간 보고를 넣었으나, nondev 하한 추가(Codex 시사)는 사용자가 선택하지 않았다(D1 = A). (4) F10의 수기 체크시트 대안은 사용자가 선택하지 않았다(D9 = B). 남은 이견: F1·F10에서 Codex는 더 작은 측정을 권했고 이 계획은 승인된 규모를 유지한다.
+
+**재검토(Codex 2회차, 같은 세션).** 수정된 두 문서와 `TODOS.md`의 작업 트리 변경(`git diff e29efd3 -- docs TODOS.md`)을 Codex가 다시 읽었다(읽기 전용, 5분 제한 첫 시도는 시간 초과로 `unavailable`, 시험 실행 금지 + 8분 예산으로 한 번 재시도해 `completed`, 토큰 약 12.6만, 작업 트리 변경 없음). 새 발견 4건(P1 3, P2 1)을 코드·문서로 모두 확인했다: (1) [P1] `obs` 키에만 쓰는 종결과 "`in_progress`면 INCOMPLETE"가 충돌, 종결 우선순위 불명 → 구현 제약 10(효과 상태 `obs.finalOutcome ?? run.status`, 종결 비가역, `postFinalizeEvents`). (2) [P1] 감사 네 곳이 `step.onFail`(`panel.js:342-345`, guard 미검사)을 빠뜨림 → 구현 제약 11(다섯 곳) + TODO R17 확장. (3) [P1] 세션마다 저장소 초기화는 20회 명단 대조용 기록을 조각내고 동의 문구("결정 후 삭제")와 모순, 2차 관찰 라운드 구분 없음 → R18 / D12 (run 3) = A(한 프로필 누적, 결정 후 삭제) + 구현 제약 13(`evalRound`). (4) [P2] 게이트 4가 "`blocked`에서"로 한정돼 첫 resolver 요청이 안 돌아오는 경우(guidance 세션은 `prompt` 상태, `engine.js:25`)가 빠짐 → 구현 제약 12(러너 상태 무관). Codex 권고: "revise the Stage A measurement contract before implementation"(이 4건 처리 후 해당 계약 문서를 수정했으며 그 수정본은 Codex가 다시 읽지 않았다).
+
+**NOT in scope (run 3).** `guard.js`·`panel.js:331`·`recover.js`의 런타임 변경(TODO R17, B 이전), provider 요청 timeout(제약 5, TODO R17), 엔진 `persist()`의 탭별 격리(TODO R17), recipe-intro와 goal 진입 권한 요청 구현(R14 → B 이전 통제), 재사용 의향 질문 Q4(R10 = A로 미측정 명시), nondev 전용 완주 하한(R7 = A), CSV 관찰 시트(R15 = B), 러너의 "goal 달성" 계약 수정(TODO R16).
+
+**What already exists (run 3).** `navigator.locks`(Chrome 확장 페이지에서 사용 가능, 이번 프로브로 확인), `restoreRecipeSessions`와 `chrome.storage.session`의 세션 복구, `session.skipped`(`engine.js:135-139`), `resolve()`의 `attempts`(승인됨, 아직 미구현), 기존 `onRemoved` 리스너(`panel.js:833`, 패널 열림 한정). 새로 만드는 것: 락 래퍼, `recordSkip`, `classifyProcedure`, `tabId→runId` 매핑, 종결 동작, 계획 run 명단, `INCOMPLETE` 판정.
+
+**Failure modes (run 3 추가).**
+```
+CODEPATH                    | FAILURE MODE                          | RESCUED?        | TEST?        | USER SEES?          | LOGGED?
+----------------------------|---------------------------------------|-----------------|--------------|---------------------|--------
+evallog 락                  | navigator.locks 없음(비정상 환경)      | Y(폴백 대기열)   | 계획         | 없음(단일 인스턴스만 안전) | Y
+evallog 락                  | 창 2개에서 사이드패널 사용             | 부분(락이 쓰기는 보호, 엔진 persist는 규칙) | 수동 1회 | 없음(엔진 세션 되살림 가능) | N
+run 종결                    | 관찰자가 종결을 잊음                   | Y(INCOMPLETE)   | 계획         | 보고서가 INCOMPLETE  | Y
+계획 run 명단               | 기록이 아예 없는 run                   | Y(INCOMPLETE)   | 계획         | 보고서가 INCOMPLETE  | Y
+panel.js 연결(recordSkip 등) | 호출 지점 누락·순서 오류               | N               | N(D8)        | 침묵(skip 과소 집계, 완주 부풀림) | N
+```
+- **CRITICAL GAP 1건(이월)**: `panel.js` 연결(`recordSkip` 호출 지점, `procedureKind`·이유 코드 계측, `sc.evallog.active` 등록)에 자동·수동 검증이 없고(D8) 실패하면 침묵으로 skip을 놓쳐 완주율을 부풀린다. 계산·저장 로직은 evallog 단위 시험이 보호하지만 호출 연결은 검증되지 않는다. D8 답변은 바꾸지 않았고 새 증거가 같은 부류의 위험이다.
+
+**Completion Summary (Eng Review run 3)**
+- Step 0: Scope Challenge — scope accepted as-is(D3 재사용)
+- Architecture Review: 6 issues found
+- Code Quality Review: 7 issues found
+- Test Review: diagram produced, 13 gaps identified (계획으로 닫힘 10, 수동 확인 2, 승인 없음 1 = panel.js D8)
+- Performance Review: 0 issues found
+- NOT in scope: written
+- What already exists: written
+- TODOS.md updates: 2 items proposed to user, 2 added (R16, R17)
+- Failure modes: 1 critical gap flagged(panel.js 연결, 이월)
+- Unresolved decisions: 1 in this review (D8 이월)
+- Outside voice: codex — completed 2회(`/codex consult` 10건 + 수정본 재검토 4건, 모두 이 run에서 처리; 재검토 이후 수정은 Codex가 다시 읽지 않음)
+- Parallelization: 7 steps, 5 lanes parallel(0,A,B,C,D) / 2 sequential(E,F)
+- Lake Score: N/A (커버리지 점수가 있는 질문 0건, 모든 질문이 종류가 다른 선택이라 점수를 매기지 않음)
+
+**Tasks 변경(run 3).** 위 "Implementation Tasks (Eng Review 갱신…)"의 T1·T3·T6·T7·T11을 제자리에서 갱신했고(T11은 L0로 승격), "Worktree parallelization strategy" 표에 L0를 추가하고 T7→T10 잔존 의존을 제거했다. 합계(추정)는 human ~35.5h / CC ~340분이다. 입력 설계 문서(`runner-first.md`) 규칙 수정과 TODOS.md 2항목은 이 리뷰의 작업 트리에 이미 반영했다.
+
+### Unresolved decisions (run 3)
+- D8 보류(run 1에서 이월): `sidepanel/panel.js` 변경(훅 등록, `recordSkip` 호출 지점, `procedureKind`·이유 코드 계측, `sc.evallog.active` 등록, recipe-done 질문)에 관찰 시작 전 자동·수동 검증이 없다. TODOS.md의 jsdom 항목으로 보류, Failure modes의 CRITICAL GAP 1건.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | 4 proposals, 3 accepted, 1 deferred |
-| Outside Review | `/plan-ceo-review`, `/plan-eng-review` Outside Voice | Independent 2nd opinion | 3 | unavailable | no completed external review |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 2 | ISSUES OPEN | run 2: 12 issues, 1 critical gap |
+| Outside Review | `/codex consult` (plan-review Outside Voice) | Independent 2nd opinion | 5 | completed (latest) | 1회차 10건(P1 9, P2 1), 수정본 재검토 4건(P1 3, P2 1), 모두 run 3에서 처리; 이전 3회는 unavailable |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 3 | ISSUES OPEN | run 3: 26 issues, 1 critical gap |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
-- **OUTSIDE COVERAGE:** codex, phase plan-review(CEO 1회, Eng 2회), **unavailable**. 이번 점검에서 Codex CLI 미설치(`CODEX_MODE: not_installed`)이고 네이티브 대체에 필요한 `TaskOutput`이 이 세션에 없다. 완료된 외부 리뷰 없음. 같은 하네스 서브에이전트 리뷰(CEO 계획 3라운드 8/10, 입력 설계 2라운드 8/10)는 outside coverage가 아니다.
-- **VERDICT:** CLEARED한 리뷰 없음. Eng Review가 ISSUES OPEN이므로 eng review required(D8 보류 해소 또는 승인 후 재실행). 이전 실행 기록(CEO 1회, Eng 1회, Outside 2회)은 이 환경의 리뷰 로그에 없고 이 문서에서 가져온 값이다.
+- **OUTSIDE COVERAGE:** codex, phase plan-review, **completed 2회** (Codex CLI 0.160, 읽기 전용; 1회차 커밋 e29efd3 기준 발견 10건, 2회차는 수정된 작업 트리 기준 발견 4건, 권고 "revise the Stage A measurement contract before implementation"). 이 run은 두 결과를 R7~R18과 구현 제약 1~13으로 처리했다. 이전 Outside Voice 시도(CEO 1회, Eng 2회)는 unavailable이었다. 같은 하네스 서브에이전트 리뷰(CEO 계획 3라운드 8/10, 입력 설계 2라운드 8/10)는 outside coverage가 아니다. 2회차 이후 바뀐 문서(R18, 구현 제약 10~13 반영분)는 Codex가 다시 읽지 않았다.
+- **VERDICT:** CLEARED한 리뷰 없음. Eng Review가 ISSUES OPEN(unresolved 1 = D8, critical gap 1)이므로 eng review required(D8 해소 또는 승인 후 재실행). 이전 실행 기록(CEO 1회, Eng 1회·run 2, Outside 3회)은 이 환경의 리뷰 로그에 없고 이 문서에서 가져온 값이다.
 
 **UNRESOLVED DECISIONS:**
-- D8 보류(run 1에서 이월): `sidepanel/panel.js` 변경(훅 등록, `handleGuidanceDone`의 `skipped` 읽기 순서, recipe-done 질문, resolve 계측)에 관찰 시작 전 자동·수동 검증이 없다. TODOS.md에 jsdom 환경으로 보류, Failure modes의 CRITICAL GAP 1건.
+- D8 보류(run 1에서 이월): `sidepanel/panel.js` 변경(훅 등록, `recordSkip` 호출 지점, `procedureKind`·이유 코드 계측, `sc.evallog.active` 등록, recipe-done 질문)에 관찰 시작 전 자동·수동 검증이 없다. TODOS.md에 jsdom 환경으로 보류, Failure modes의 CRITICAL GAP 1건.
 - + 1 unresolved from prior reviews
+

@@ -37,3 +37,27 @@
 **Effort:** M (human: ~1일 / CC: ~1시간)
 **Priority:** P2
 **Depends on:** A 단계 evallog·panel 변경 완료
+
+### 러너가 "goal 달성"과 "다음 화면 도달"을 구분
+
+**What:** 화면 이동 전용 절차(목표까지 갈 수 없을 때 "이동을 위해 눌러야 하는 링크까지만" 만든 절차)가 끝나도 goal을 `done`으로 올리지 않고, 새 화면에서 다시 해석하도록 러너 계약을 바꾼다.
+
+**Why:** 지금은 그 절차의 마지막 step을 통과하면 `session.status='done'` → `handleGuidanceDone` → `markGoalDone`이라 실제 설정 없이 goal이 완료로 집계된다. 완주율과 goal 단위 완주율(중단 규칙 30%)이 부풀려진다.
+
+**Context:** `lib/procedure-generator.js:28-30`(프롬프트가 이동 전용 절차를 허용), `sidepanel/panel.js:496`(`markGoalDone` 호출), `lib/recipe-engine.js:101-116`. /plan-eng-review run 3(R16)에서 기록(2026-10-03). A 단계는 러너를 고치지 않고 `procedureKind`(`nav_only`/`action`/`mixed`)와 허위 완주의 겹침만 기록·보고한다(R11 = A). 그 데이터가 수정 방향과 우선순위를 정한다. 수정 방식(예: goal을 `in_progress`로 유지)의 실현 가능성은 시험하지 않았다.
+
+**Effort:** M (human: ~1일 / CC: ~1시간)
+**Priority:** P2
+**Depends on:** A 단계 관찰 결과(R11 `procedureKind` 데이터)
+
+### B 이전 러너 견고화
+
+**What:** (1) `goalLabel`(`panel.js:331`)·복구 문구(`recover.js`)·단계 힌트 `step.onFail`(`panel.js:342-345`)에도 "관측된 라벨만" guard 적용, (2) provider 요청에 timeout(`providers.js` fetch 3곳), (3) `recipe-engine.js`의 세션 저장을 탭별로 격리(지금은 세션 맵 전체를 한 키에 써서 창이 둘이면 서로를 덮어씀).
+
+**Why:** 지금 guard는 `instruct`의 따옴표 구간만 `usedLabels`와 교차 검증하고(`guard.js:86-102`) 화면 제목·복구 문구는 검사를 거치지 않는다. AI 요청에는 시간 제한이 없어 응답이 안 오면 끝없이 기다릴 수 있다. 사이드패널이 창마다 열리면 한 패널이 지운 세션을 다른 패널의 저장이 되살린다. 실제 사용자 콘텐츠를 읽는 B 이전에 필요하다.
+
+**Context:** `lib/guard.js:86-102`, `sidepanel/panel.js:331,342-345`, `lib/recover.js:12-31`, `lib/providers.js:38,59,93`, `lib/recipe-engine.js:14,50-58`. /plan-eng-review run 3(R17)에서 기록(2026-10-03). 세 번째는 인스턴스 2개 프로브로 재현했다(A가 지운 탭 세션을 B의 `persist()`가 되살림). 기존 "B 진행 게이트에 페이지 콘텐츠 주입 내성 시험 추가"와 입력 설계 문서의 "B 단계로 미루는 통제" 목록과 함께 B 이전 보안·안정성 검토에서 다룬다. A 단계는 이 구멍들을 안은 채 측정하며 러너를 고치지 않는다(R11 = A).
+
+**Effort:** L (human: ~2일 / CC: ~2시간)
+**Priority:** P2
+**Depends on:** A 통과
