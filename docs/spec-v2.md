@@ -76,6 +76,13 @@ setup-copilot/
 
 `background/service-worker.js`, `sidepanel/panel.js`, `options/options.js`는 ES 모듈. LLM 호출과 오케스트레이션은 사이드패널에서 직접 수행한다.
 
+> **도식 점검(2026-10-05, T13): 이 절의 도식·파일 명세는 낡았다.** 위는 Phase C까지 포함한 목표 구조이고, 현재 코드(Stage A)와 다음이 다르다. 목표 구조 서술은 그대로 두고 차이만 기록한다.
+> - 없음(미구현): `lib/cache.js`와 캐시 조회·기여 경로(§6.2의 캐시 분기는 코드에 없다. 지금은 항상 resolver로 간다). 백엔드는 `api-server/`·`docker-compose.yml` 골격만 있고 확장이 호출하지 않는다.
+> - 이름이 다름: `lib/resolver.js` → `lib/procedure-generator.js`. 지금 `lib/recipe-resolver.js`는 이것이 아니라 URL로 레시피를 고르는 모듈이다.
+> - 도식에 없는 모듈: `recipe-store.js`(번들 레시피 레지스트리), `recipe-engine.js`(레시피 세션), `recipe-resolver.js`, `evallog.js`(Stage A 평가 로그), `scrub.js`(키 형태 스크럽, `content/probe.js`의 스크럽과 동기화 필요), `recent-goals.js`, `registered-domain.js`, `options/checksheet.js`, `scripts/eval-report.js`.
+> - 의존 방향: 도식은 `sidepanel`이 엔진들을 직접 조율한다고 하는데 실제로는 `panel.js`가 guidance 엔진(`engine.js`)과 레시피 엔진을 함께 조율하고, 레시피 엔진이 `evallog` 리스너를 호출한다(`setRecipeEventListener`).
+> - `README.md`는 목록에 있으나 저장소에 없다. 나머지(`manifest.json`, `background/`, `content/probe.js`, `sidepanel/`, `options/`, `fixtures/` 3종, `icons/`)는 일치한다.
+
 ---
 
 ## 3. 매니페스트

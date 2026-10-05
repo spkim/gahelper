@@ -272,7 +272,7 @@ Review 발견에서 나온 작업이다. 결정은 위 ledger를 따른다. 추�
   - Surfaced by: Section 8·9
   - Files: `docs/observation-checklist.md`(신규)
   - Verify: 설계 문서의 Participants·Tester setup plan 항목이 빠짐없이 들어 있음
-- [ ] **T13 (P3, human: ~1h / CC: ~10min)** — `docs/spec-v2.md` 아키텍처 도식 낡음 확인(Stale Diagram Audit): Section 1 도식과 비교해 차이를 한 줄로 기록
+- [x] **T13 (P3, human: ~1h / CC: ~10min)** *(완료: `docs/spec-v2.md` §2에 점검 메모 추가 — 낡음: cache.js 없음, resolver.js 이름 다름, 신규 모듈 다수)* — `docs/spec-v2.md` 아키텍처 도식 낡음 확인(Stale Diagram Audit): Section 1 도식과 비교해 차이를 한 줄로 기록
   - Surfaced by: Stale Diagram Audit
   - Files: `docs/spec-v2.md`
   - Verify: 차이 기록 한 줄(또는 "일치")
