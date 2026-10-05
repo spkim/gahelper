@@ -99,11 +99,17 @@ describe("recipe-engine 이벤트", () => {
 describe("엔진 → evallog 연결", () => {
   it("R04 완료 흐름이 completed run 으로 기록된다", async () => {
     const { onRecipeEvent } = await import("../lib/evallog.js");
-    setRecipeEventListener(onRecipeEvent);
+    const inflight = [];
+    setRecipeEventListener((e) => {
+      const p = onRecipeEvent(e);
+      inflight.push(p);
+      return p;
+    });
     await createRecipeSession(TAB, "R04");
     await markGoalDone(TAB);
     await markGoalDone(TAB);
     await clearRecipeSession(TAB);
+    await Promise.all(inflight); // 엔진은 listener 를 기다리지 않으므로 큐가 빌 때까지 기다린다
     const runs = Object.entries(mock.local.dump()).filter(([k]) => k.startsWith("sc.evallog.run.")).map(([, v]) => v);
     assert.equal(runs.length, 1);
     assert.equal(runs[0].status, "completed");
