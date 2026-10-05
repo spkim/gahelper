@@ -19,8 +19,9 @@ import { getRecipe, listRecipes } from "../lib/recipe-store.js";
 import {
   createRecipeSession, getRecipeSession, clearRecipeSession,
   currentGoal, markGoalDone, restoreRecipeSessions,
-  pauseForPopup, resumeFromPopup, getSessionForPopup,
+  pauseForPopup, resumeFromPopup, getSessionForPopup, setRecipeEventListener,
 } from "../lib/recipe-engine.js";
+import { onRecipeEvent, recordResolve, recordSkip, recordConfirm, markAbandoned } from "../lib/evallog.js";
 
 // ─── 상수 / 전역 ─────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ let ticking = false;
 let recentGoals = [];
 
 // session 없는 상태에서의 UI 모드.
+const confirmedTabs = new Set(); // recipe-done 질문에 이미 답한 탭(UI 표시용, 기록은 evallog)
 let uiMode = "prompt"; // "prompt" | "recipe-pick" | "resolving" | "refuse"
 
 // 새로 열린 탭 중 URL 확정을 기다리는 것 (tabId → openerTabId).
@@ -374,6 +376,7 @@ function renderBlocked(node) {
       const s = getSession(tabId);
       if (!s) return;
       resumeFromBlocked(s);
+      recordSkip(tabId, { stepIdx: s.stepIdx }); // 발생 즉시 기록(패널을 닫아도 남는다)
       manualAdvance(s);
       render(true);
       ensurePolling();
@@ -404,8 +407,25 @@ function renderRecipeDone(node) {
   const recipeSession = tabId ? getRecipeSession(tabId) : null;
   const recipe = recipeSession ? getRecipe(recipeSession.recipeId) : null;
   node.querySelector('[data-slot="goal-label"]').textContent = recipe?.name ?? "";
+
+  // "실제로 됐나요?" — 첫 답만 evallog 가 남긴다. 답한 뒤에는 버튼을 숨기고 감사 문구를 보인다.
+  const askEl = node.querySelector('[data-slot="confirm-ask"]');
+  const thanksEl = node.querySelector('[data-slot="confirm-thanks"]');
+  if (tabId && confirmedTabs.has(tabId)) {
+    askEl.classList.add("hidden");
+    thanksEl.classList.remove("hidden");
+  }
+  for (const btn of node.querySelectorAll("[data-confirm]")) {
+    btn.addEventListener("click", async () => {
+      if (!tabId) return;
+      confirmedTabs.add(tabId);
+      await recordConfirm(tabId, btn.dataset.confirm === "yes");
+      render(true);
+    });
+  }
+
   node.querySelector('[data-action="restart"]').addEventListener("click", async () => {
-    if (tabId) { clearSession(tabId); await clearRecipeSession(tabId); }
+    if (tabId) { clearSession(tabId); await clearRecipeSession(tabId); confirmedTabs.delete(tabId); }
     uiMode = "prompt";
     render(true);
   });
@@ -519,6 +539,7 @@ async function resolveProcedure(session, provider, goalText) {
     sigRes = await captureSignature(session.tabId);
   } catch (err) {
     console.warn("[setup-copilot] captureSignature 실패", err?.message);
+    recordResolve(session.tabId, { blockedCause: "capture_failed" });
     session.status = "blocked";
     session.recoverText = "화면 구조를 읽지 못했습니다. 페이지가 완전히 로드됐는지 확인하세요.";
     return false;
@@ -531,14 +552,30 @@ async function resolveProcedure(session, provider, goalText) {
   session.structuralHash = hash;
 
   let resolveResult;
+  const resolveStart = Date.now();
   try {
     resolveResult = await resolve(provider, goalText, sig);
   } catch (err) {
     console.warn("[setup-copilot] resolve 실패", err?.message, err?.reasons);
+    const attempts = err?.attempts ?? [];
+    const lastReasons = attempts.at(-1)?.reasons ?? [];
+    recordResolve(session.tabId, {
+      resolverMs: Date.now() - resolveStart,
+      attempts,
+      blockedCause: err?.message === "guard_fail" ? "guard_fail"
+        : lastReasons.includes("json_parse_error") ? "json_parse_error" : "resolve_error",
+    });
     session.status = "blocked";
     session.recoverText = `안내를 만들지 못했습니다: ${err?.message ?? "알 수 없는 오류"}. 잠시 후 다시 시도하거나 수동으로 진행하세요.`;
     return false;
   }
+
+  recordResolve(session.tabId, {
+    resolverMs: Date.now() - resolveStart,
+    attempts: resolveResult.attempts,
+    procedure: resolveResult.procedure,
+    blockedCause: resolveResult.empty ? "empty" : null,
+  });
 
   if (resolveResult.empty) {
     session.status = "blocked";
@@ -857,6 +894,13 @@ async function init() {
   settings = await getSettings();
   recentGoals = await getRecentGoals();
   await restoreRecipeSessions();
+  setRecipeEventListener(onRecipeEvent);
+  try {
+    const open = await chrome.tabs.query({});
+    await markAbandoned(open.map((t) => t.id));
+  } catch (err) {
+    console.warn("[setup-copilot] evallog abandoned 정리 실패:", err?.message);
+  }
   attachWatchers();
   ensurePolling();
   await refreshContext();

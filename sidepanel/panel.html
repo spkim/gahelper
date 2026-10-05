@@ -182,6 +182,14 @@
       <div class="card">
         <p class="card-lede">모든 설정을 완료했습니다.</p>
         <p class="card-lede done-goal" data-slot="goal-label"></p>
+        <div data-slot="confirm-ask">
+          <p class="card-lede">방금 설정이 실제로 됐나요?</p>
+          <div class="card-actions">
+            <button type="button" class="btn-ghost btn-sm" data-confirm="yes">네, 됐어요</button>
+            <button type="button" class="btn-ghost btn-sm" data-confirm="no">아니요, 안 됐어요</button>
+          </div>
+        </div>
+        <p class="card-lede hidden" data-slot="confirm-thanks">답해 주셔서 감사합니다.</p>
         <div class="card-actions">
           <button type="button" class="btn-primary" data-action="restart">다른 설정 하기</button>
         </div>
