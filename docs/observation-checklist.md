@@ -22,7 +22,7 @@
 | `sc.evallog.active` | 사이드패널(`chrome.storage.session`) | `tabId→runId` 매핑 |
 - 모든 읽기-수정-쓰기는 이름 있는 락 `sc.evallog`(`navigator.locks.request`) 안에서 한다. `navigator.locks`가 없으면 화면 안 promise 대기열로 폴백한다. (실측: 확장 페이지 2개 × 30건에서 화면별 대기열만 30/60, 락 60/60.)
 - 목록·내보내기·삭제는 접두어 `sc.evallog.`로 시작하는 키만 다룬다. `sc.settings`(테스트용 LLM API 키 포함)는 읽지도, 내보내지도, 지우지도 않는다.
-- **기록하지 않는 것**: 화면 텍스트, signature, goalText 외의 사용자 입력, 비밀값(`sk-ant-` 등), 라벨 텍스트. `guardRejects`는 이유 코드만 저장하고 알려진 코드(`not_object`, `no_verify`, `no_usedLabels`, `unobserved_label`, `quoted_not_in_usedLabels`, `bad_locator`, `css_locator`, `unobserved_locator`, `unobserved`, `json_parse_error`)에 접두 매칭하며 매칭되지 않으면 `unknown`으로 저장한다.
+- **기록하지 않는 것**: 화면 텍스트, signature, goalText 외의 사용자 입력, 비밀값(`sk-ant-` 등), 라벨 텍스트. `guardRejects`는 이유 코드만 저장하고 알려진 코드(`no_procedure`, `no_steps`, `not_object`, `no_verify`, `no_usedLabels`, `unobserved_label`, `quoted_not_in_usedLabels`, `bad_locator`, `css_locator`, `unobserved_locator`, `unobserved`, `json_parse_error`)에 접두 매칭하며 매칭되지 않으면 `unknown`으로 저장한다.
 
 ### 1.3 run 상태와 종결 결과
 - **상태**: `in_progress` → `completed`(모든 goal `done`) / `abandoned`(시작 후 중단: 재시작, 패널 무효화, 탭 닫힘, 새 레시피 시작) / `rejected`(시작 자체가 거부됨, `blockedCause` 기록). `crashOrHang`은 관찰자 종결 결과다.

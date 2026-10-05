@@ -272,7 +272,7 @@ Review 발견에서 나온 작업이다. 결정은 위 ledger를 따른다. 추�
   - Surfaced by: Section 8·9
   - Files: `docs/observation-checklist.md`(신규)
   - Verify: 설계 문서의 Participants·Tester setup plan 항목이 빠짐없이 들어 있음
-- [x] **T13 (P3, human: ~1h / CC: ~10min)** *(완료: `docs/spec-v2.md` §2에 점검 메모 추가 — 낡음: cache.js 없음, resolver.js 이름 다름, 신규 모듈 다수)* — `docs/spec-v2.md` 아키텍처 도식 낡음 확인(Stale Diagram Audit): Section 1 도식과 비교해 차이를 한 줄로 기록
+- [ ] **T13 (P3, human: ~1h / CC: ~10min)** — `docs/spec-v2.md` 아키텍처 도식 낡음 확인(Stale Diagram Audit): Section 1 도식과 비교해 차이를 한 줄로 기록
   - Surfaced by: Stale Diagram Audit
   - Files: `docs/spec-v2.md`
   - Verify: 차이 기록 한 줄(또는 "일치")
@@ -635,33 +635,33 @@ handleGuidanceDone 순서     | clearSession 후 skipped 읽음         | N(순�
 → 5 lanes parallel(0,A,B,C,D) + 2 sequential 후속(E,F).
 
 ## Implementation Tasks (Eng Review 갱신, 이 목록이 CEO 리뷰의 Tasks를 대체한다)
-- [ ] **T5 (P1, human: ~3h / CC: ~25min)** — `test/helpers/chrome-storage-mock.js`(session·local·onChanged; JSON 복제, 실제로 읽고 쓰는 `local`) + 기존 3개 테스트 이전(D6). popup 테스트는 참조 저장에서 복제 저장으로 의미가 바뀌므로 이전 후 전체 통과를 확인한다(run 2 정정)
+- [x] **T5 (P1, human: ~3h / CC: ~25min)** — `test/helpers/chrome-storage-mock.js`(session·local·onChanged; JSON 복제, 실제로 읽고 쓰는 `local`) + 기존 3개 테스트 이전(D6). popup 테스트는 참조 저장에서 복제 저장으로 의미가 바뀌므로 이전 후 전체 통과를 확인한다(run 2 정정)
   - Surfaced by: Code Quality #1 — `test/recipe-session.test.js:9-23`
   - Files: `test/helpers/chrome-storage-mock.js`(신규), `test/recipe-session.test.js`, `test/recipe-popup.test.js`, `test/recipe-engine.test.js`
   - Verify: `node --test test/*.test.js` 전체 통과
-- [ ] **T1 (P1, human: ~5h / CC: ~60min)** — `lib/evallog.js` — 코어·스키마: run 기록 `sc.evallog.run.<runId>`(사이드패널만)·관찰자 판정 `sc.evallog.obs.<runId>`(옵션 페이지만) 분리 저장, **모든 `get→set`을 락 `sc.evallog`(`navigator.locks`) 안에서 실행하고 없으면 화면별 promise 대기열로 폴백, `seq`는 락 안에서 읽은 최대값에서 부여(R12, run 3)**, (runId,seq) idempotent, 실패 카운트, abandoned 판정 순수 함수(열린 tabId 목록 입력, 제약 2)/rejected, 이유 코드 추출(제약 3), 요약 함수(`summarizeGuidanceSession`, 결정 규칙 계산 포함), **`recordSkip`(수동 진행 즉시 기록, run 3 제약 1), `tabId→runId` 매핑 `sc.evallog.active`(storage.session, 제약 2), `classifyProcedure`(`nav_only`/`action`/`mixed`, R11)**, 종결 결과 `completed`/`abandoned`/`rejected`/`crashOrHang`와 효과 상태 규칙(`obs.finalOutcome ?? run.status`, 종결은 `in_progress`에만·비가역, 종결 뒤 러너 이벤트는 `postFinalizeEvents`로만 집계, 제약 10), 모든 run 기록의 `evalRound`(제약 13), 비밀값 제외, 목록·내보내기·삭제는 접두어 `sc.evallog.` 키만(`sc.settings` 불가침)
+- [x] **T1 (P1, human: ~5h / CC: ~60min)** — `lib/evallog.js` — 코어·스키마: run 기록 `sc.evallog.run.<runId>`(사이드패널만)·관찰자 판정 `sc.evallog.obs.<runId>`(옵션 페이지만) 분리 저장, **모든 `get→set`을 락 `sc.evallog`(`navigator.locks`) 안에서 실행하고 없으면 화면별 promise 대기열로 폴백, `seq`는 락 안에서 읽은 최대값에서 부여(R12, run 3)**, (runId,seq) idempotent, 실패 카운트, abandoned 판정 순수 함수(열린 tabId 목록 입력, 제약 2)/rejected, 이유 코드 추출(제약 3), 요약 함수(`summarizeGuidanceSession`, 결정 규칙 계산 포함), **`recordSkip`(수동 진행 즉시 기록, run 3 제약 1), `tabId→runId` 매핑 `sc.evallog.active`(storage.session, 제약 2), `classifyProcedure`(`nav_only`/`action`/`mixed`, R11)**, 종결 결과 `completed`/`abandoned`/`rejected`/`crashOrHang`와 효과 상태 규칙(`obs.finalOutcome ?? run.status`, 종결은 `in_progress`에만·비가역, 종결 뒤 러너 이벤트는 `postFinalizeEvents`로만 집계, 제약 10), 모든 run 기록의 `evalRound`(제약 13), 비밀값 제외, 목록·내보내기·삭제는 접두어 `sc.evallog.` 키만(`sc.settings` 불가침)
   - Surfaced by: Section 1 #1·#2·#4, D4, E1(CEO), run 2 E6·제약 1~4, run 3 F3·F4·F5·R11·R12
   - Files: `lib/evallog.js`(신규), `test/evallog.test.js`(신규; eval-report 계산 테스트 포함, D3)
   - Verify: `node --test test/evallog.test.js` — 겹치는 N건 append가 모두 남음, 락 안 읽기-수정-쓰기와 폴백, 두 락 사용자(가짜 `navigator.locks`) 직렬화, 내보내기에 `sc.settings` 불포함, obs 쓰기가 run 키를 바꾸지 않음, 죽은 tabId의 in_progress가 abandoned, 라벨 속 `:`·키 모양 문자열에서 이유 코드만 남음, `classifyProcedure` 4행(`nav_only`/`action`/`mixed`/빈 steps), `recordSkip` 후 패널 재오픈에서 skip 유지. 수동 1회: 확장을 로드해 사이드패널과 옵션 페이지에서 동시 append 후 유실 없음(사이드패널↔서비스 워커는 미검증, R12 한계)
-- [ ] **T2 (P1, human: ~1h / CC: ~10min)** — `lib/recipe-engine.js` — `setRecipeEventListener(fn)` 추가, 전이마다 이벤트 전송(종료 이벤트에 세션 최종 `status` 포함, 세션이 없으면 무이벤트: 제약 1), listener 예외 격리
+- [x] **T2 (P1, human: ~1h / CC: ~10min)** — `lib/recipe-engine.js` — `setRecipeEventListener(fn)` 추가, 전이마다 이벤트 전송(종료 이벤트에 세션 최종 `status` 포함, 세션이 없으면 무이벤트: 제약 1), listener 예외 격리
   - Surfaced by: Section 1 #1, D4=A, run 2 제약 1
   - Files: `lib/recipe-engine.js`, `test/recipe-engine.test.js`
   - Verify: 각 전이에서 이벤트, 종료 이벤트의 최종 status, 세션 없는 `clearRecipeSession`은 무이벤트, listener 예외가 세션을 깨지 않음, 미등록 시 무동작
-- [ ] **T4 (P1, human: ~4h / CC: ~70min)** — `lib/procedure-generator.js` `resolve()` — `attempts` 반환(D5=B) + `test/procedure-generator.test.js`(D7=A: 빈 응답, 깨진 JSON, 거절, 없는 라벨, attempts 형식)
+- [x] **T4 (P1, human: ~4h / CC: ~70min)** — `lib/procedure-generator.js` `resolve()` — `attempts` 반환(D5=B) + `test/procedure-generator.test.js`(D7=A: 빈 응답, 깨진 JSON, 거절, 없는 라벨, attempts 형식)
   - Surfaced by: Code Quality #2, Test Review
   - Files: `lib/procedure-generator.js`, `sidepanel/panel.js`(호출부는 T3), `scripts/eval.js`(두 번째 호출부, 가산적 변경이라 코드 수정 불필요, 확인만), `test/procedure-generator.test.js`(신규)
   - Verify: 신규 테스트 + 기존 `test/payload-security.test.js` 통과. `attempts[].reasons` 원문은 evallog의 이유 코드 추출(T1)을 거친 뒤에만 저장
-- [ ] **T3 (P1, human: ~4.5h / CC: ~35min)** — `sidepanel/panel.js`·`panel.html` — 리스너 등록, abandoned 판정(init에서 `chrome.tabs.query`로 얻은 열린 tabId 목록을 evallog 순수 함수에 넘김, 제약 2), **수동 진행 호출부(`panel.js:373-379`의 `manualAdvance` 직후)에서 `recordSkip`을 즉시 호출(run 3 제약 1; goal 종료 시점 `clearSession` 전 읽기는 쓰지 않음)**, `resolve()` 계측(`resolverMs`, attempts → guardRejects 이유 코드, **`procedureKind`**), recipe-done "실제로 됐나요?" UI
+- [x] **T3 (P1, human: ~4.5h / CC: ~35min)** — `sidepanel/panel.js`·`panel.html` — 리스너 등록, abandoned 판정(init에서 `chrome.tabs.query`로 얻은 열린 tabId 목록을 evallog 순수 함수에 넘김, 제약 2), **수동 진행 호출부(`panel.js:373-379`의 `manualAdvance` 직후)에서 `recordSkip`을 즉시 호출(run 3 제약 1; goal 종료 시점 `clearSession` 전 읽기는 쓰지 않음)**, `resolve()` 계측(`resolverMs`, attempts → guardRejects 이유 코드, **`procedureKind`**), recipe-done "실제로 됐나요?" UI
   - Surfaced by: Section 1 #2·#3, 정정 사항, run 3 F5·R11
   - Files: `sidepanel/panel.js`, `sidepanel/panel.html`
   - Verify: **자동 검증 없음(D8)**. 개발자가 로컬에서 직접 확인(검증 체크리스트는 이번 범위가 아님)
-- [ ] **T6 (P1, human: ~5h / CC: ~40min)** — 옵션 페이지 관찰자 체크시트·내보내기(C1, D9 = 옵션 페이지 UI 유지). run 3 추가: **관찰자 종결 동작(`in_progress` run을 `abandoned`/`crashOrHang`으로 종결, R13; 종결은 `sc.evallog.obs.<runId>`에만 씀), 참가자 요약("코딩된 회차 n/2", R9), Q3 명칭 "혼자 할 수 있음"(R10), "관측되지 않은 라벨" 코딩을 안내 문구 다섯 곳(instruct, goalLabel, recoverText, 신뢰 배지, step.onFail)별로(제약 3·11), 종결은 `in_progress`에만 허용하고 되돌릴 수 없음(제약 10), `evalRound` 설정(제약 13), 모든 쓰기는 R12 락 사용**
+- [x] **T6 (P1, human: ~5h / CC: ~40min)** — 옵션 페이지 관찰자 체크시트·내보내기(C1, D9 = 옵션 페이지 UI 유지). run 3 추가: **관찰자 종결 동작(`in_progress` run을 `abandoned`/`crashOrHang`으로 종결, R13; 종결은 `sc.evallog.obs.<runId>`에만 씀), 참가자 요약("코딩된 회차 n/2", R9), Q3 명칭 "혼자 할 수 있음"(R10), "관측되지 않은 라벨" 코딩을 안내 문구 다섯 곳(instruct, goalLabel, recoverText, 신뢰 배지, step.onFail)별로(제약 3·11), 종결은 `in_progress`에만 허용하고 되돌릴 수 없음(제약 10), `evalRound` 설정(제약 13), 모든 쓰기는 R12 락 사용**
   - Files: `options/*`
   - Verify: 저장·재저장·진행 중 run 거부·종결 동작이 run 키를 바꾸지 않음은 evallog 쪽 테스트로, UI는 수동 확인
-- [ ] **T7 (P2, human: ~5h / CC: ~45min)** — `scripts/eval-report.js`(얇은 실행 래퍼; 기존 Phase A 하네스 `scripts/eval.js`와 이름·용도 구분) + 가짜 20회 픽스처(T1 스키마 확정 후 포함, run 2에서 T10이 합쳐짐). run 3 추가: **각 비율의 95% 구간(정확 이항)과 nondev 하위 합계를 보고만(R7 = A, 게이트 아님), 피벗 우선 판정(R8), 참가자 단위 "두 회차 모두 충족"과 "코딩된 회차 n/2"(R9), Q3 명칭(R10), `nav_only` goal과 허위 완주 겹침 보고(R11), 계획 run 명단 대조와 `INCOMPLETE` 판정(R13), 효과 상태 `obs.finalOutcome ?? run.status`와 `postFinalizeEvents` 표시(제약 10), 라운드별(`evalRound`) 명단 대조·판정(제약 13), 입력은 마지막 내보내기 하나(R18)**
+- [x] **T7 (P2, human: ~5h / CC: ~45min)** — `scripts/eval-report.js`(얇은 실행 래퍼; 기존 Phase A 하네스 `scripts/eval.js`와 이름·용도 구분) + 가짜 20회 픽스처(T1 스키마 확정 후 포함, run 2에서 T10이 합쳐짐). run 3 추가: **각 비율의 95% 구간(정확 이항)과 nondev 하위 합계를 보고만(R7 = A, 게이트 아님), 피벗 우선 판정(R8), 참가자 단위 "두 회차 모두 충족"과 "코딩된 회차 n/2"(R9), Q3 명칭(R10), `nav_only` goal과 허위 완주 겹침 보고(R11), 계획 run 명단 대조와 `INCOMPLETE` 판정(R13), 효과 상태 `obs.finalOutcome ?? run.status`와 `postFinalizeEvents` 표시(제약 10), 라운드별(`evalRound`) 명단 대조·판정(제약 13), 입력은 마지막 내보내기 하나(R18)**
   - Files: `scripts/eval-report.js`, `test/fixtures/evallog-20runs.json`, `test/fixtures/planned-runs.json`(R13 명단, 라운드별)
   - Verify: 픽스처 입력의 표가 손계산과 일치. 추가 시험: 구간 값 3개(8/16, 3/5, 4/5), 피벗형 4명 + 나머지 B 조건 참 → 피벗, 두 회차 일치·불일치·결측, 명단 누락·`in_progress` 잔존 → `INCOMPLETE`, `INCOMPLETE`에서는 B 진행도 피벗도 내지 않음
-- [ ] **T8 (P2, human: ~2h / CC: ~15min)** — 레시피 린트 규칙을 `test/recipe-store.test.js`에 추가(site URL 형식, 라벨형 문구, payload 길이, `generic-setup` 예외)(C2, D3)
+- [x] **T8 (P2, human: ~2h / CC: ~15min)** — 레시피 린트 규칙을 `test/recipe-store.test.js`에 추가(site URL 형식, 라벨형 문구, payload 길이, `generic-setup` 예외)(C2, D3)
   - Files: `test/recipe-store.test.js`
   - Verify: 11개 레지스트리 통과 + 규칙별 음성 케이스 실패
 - [x] **T9 (P3, human: ~1h / CC: ~5min)** *(완료)* — `recipes/recipes-mvp.json` 삭제, `lib/recipe-store.js:1` 주석과 부록 R4.1 갱신(E2)
@@ -671,7 +671,7 @@ handleGuidanceDone 순서     | clearSession 후 skipped 읽음         | N(순�
   - Files: `docs/observation-checklist.md`
 - [x] **T12 (P3, human: ~2h / CC: ~10min)** *(완료: `docs/designs/lesson-recipes.md`)* — lesson 설계 한 장(C3), "관찰 후 갱신" 표시
   - Files: `docs/designs/lesson-recipes.md`
-- [ ] **T13 (P3, human: ~1h / CC: ~10min)** — `docs/spec-v2.md` 아키텍처 도식 낡음 확인
+- [x] **T13 (P3, human: ~1h / CC: ~10min)** *(완료: `docs/spec-v2.md` §2에 점검 메모 추가 — 낡음: cache.js 없음, resolver.js 이름 다름, 신규 모듈 다수)* — `docs/spec-v2.md` 아키텍처 도식 낡음 확인
   - Files: `docs/spec-v2.md`
 - 합계(추정, run 2 정정): 항목별 합 human ~29h / CC ~260분에 R6(T1 +~1h / +~25분)을 더해 human ~30h / CC ~285분(약 4.75h). 비율은 근거가 약한 추정. 이전 CEO 리뷰의 T8(읽기 전용 확인)은 T4의 테스트로 대체되었다.
 - 합계(추정, run 3 갱신): run 3이 T1 +1h/+15분, T3 +0.5h/+5분, T6 +1h/+10분, T7 +2h/+20분, T11 +1h/+5분을 더해 human ~35.5h / CC ~340분(약 5.7h). 비율은 근거가 약한 추정. 입력 설계 문서 규칙 수정(`runner-first.md`)과 TODOS.md 2항목은 이 리뷰에서 작업 트리에 이미 반영했다(별도 작업 없음).
