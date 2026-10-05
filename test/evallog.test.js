@@ -231,6 +231,14 @@ describe("observer side", () => {
     assert.equal(JSON.stringify(readRun()), before);
   });
 
+  it("saveObservation stores safety fields and rejects non-tri values", async () => {
+    const id = await finishedRun();
+    const ok = await E.saveObservation(id, { secretSentToLlm: false, oauthResumeOk: null, payloadSentToLlm: true });
+    assert.equal(ok.obs.secretSentToLlm, false);
+    assert.equal(ok.obs.payloadSentToLlm, true);
+    assert.equal((await E.saveObservation(id, { secretSentToLlm: "no" })).field, "secretSentToLlm");
+  });
+
   it("saveObservation rejects invalid fields", async () => {
     const id = await finishedRun();
     assert.equal((await E.saveObservation(id, { q1: 7 })).field, "q1");

@@ -18,7 +18,7 @@
 | 키 | 쓰는 곳 | 내용 |
 |---|---|---|
 | `sc.evallog.run.<runId>` | 사이드패널만 | 상태 전이, goal별 기록, `userConfirmedReal`, `skippedSteps`, `procedureKind`, `resolverMs`, `guardRejects`(이유 코드만) |
-| `sc.evallog.obs.<runId>` | 옵션 페이지만 | 관찰자 판정, Q1~Q3 코드와 원문, `observerVerified`, 안내 문구 감사 결과, 종결 결과(`finalOutcome`) |
+| `sc.evallog.obs.<runId>` | 옵션 페이지만 | 관찰자 판정, Q1~Q3 코드와 원문, `observerVerified`, 안내 문구 감사 결과, 안전 확인(`secretSentToLlm`·`oauthResumeOk`·`payloadSentToLlm`), 종결 결과(`finalOutcome`) |
 | `sc.evallog.active` | 사이드패널(`chrome.storage.session`) | `tabId→runId` 매핑 |
 - 모든 읽기-수정-쓰기는 이름 있는 락 `sc.evallog`(`navigator.locks.request`) 안에서 한다. `navigator.locks`가 없으면 화면 안 promise 대기열로 폴백한다. (실측: 확장 페이지 2개 × 30건에서 화면별 대기열만 30/60, 락 60/60.)
 - 목록·내보내기·삭제는 접두어 `sc.evallog.`로 시작하는 키만 다룬다. `sc.settings`(테스트용 LLM API 키 포함)는 읽지도, 내보내지도, 지우지도 않는다.
@@ -84,7 +84,7 @@ dev 10회(참가자 ID `dev`, R01~R10 각 1회)와 nondev 10회(P1~P5 × 레시�
 - [ ] **브라우저 창 1개, 사이드패널 1개**만 연다. 다른 창은 모두 닫았다. (세션 저장이 창이 둘이면 서로를 덮어쓴다.)
 - [ ] 참가자에게 권한 대화상자가 뜰 것을 미리 설명했다.
 - [ ] 사전 질문(기준선, 규칙에는 쓰지 않음)을 했다: "안내받을래요, 대신 해 줄까요? 왜요?" 답과 이유 원문을 적었다.
-- [ ] R06·R08이면 사이드패널 개발자 도구 네트워크 탭을 열어 두었다(비밀값 LLM 전송 확인).
+- [ ] R06·R08이면 사이드패널 개발자 도구 네트워크 탭을 열어 두었다(비밀값 LLM 전송 확인). 결과는 체크시트의 `secretSentToLlm`에 기록한다. R07·R09는 OAuth 재개 결과(`oauthResumeOk`), R10은 payload LLM 포함 여부(`payloadSentToLlm`)를 기록한다. 미확인으로 두면 B 조건 3이 미충족으로 계산된다.
 - [ ] 레시피당 관찰 시간은 20분 이내다. 막혀도 **도움 없이** "수동으로 진행"을 누르게 하고 기록한다.
 
 ### 2.4 세션 중과 직후

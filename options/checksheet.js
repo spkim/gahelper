@@ -18,6 +18,11 @@ const STATUS_LABEL = {
 const AUDIT_LABEL = {
   instruct: "단계 안내 문장", goalLabel: "제목", recoverText: "복구 문구", badge: "신뢰 배지", onFail: "단계 힌트(step.onFail)",
 };
+const SAFETY_LABEL = {
+  secretSentToLlm: "비밀값이 LLM 요청에 실렸나요? (R06·R08, 네트워크 탭 확인)",
+  oauthResumeOk: "OAuth 팝업 뒤 재개에 성공했나요? (R07·R09)",
+  payloadSentToLlm: "붙여넣기 payload가 LLM 요청에 실렸나요? (R10)",
+};
 const REASON_LABEL = { distrust: "불신·불안", tedious: "귀찮음·보기 싫음", learn: "배우고 싶음", other: "기타" };
 
 function el(tag, props = {}, ...children) {
@@ -132,6 +137,14 @@ function observationForm(row, onSaved) {
   }
   form.append(audit);
 
+  const safetySelects = {};
+  const safety = el("div", { class: "cs-audit" });
+  for (const [k, label] of Object.entries(SAFETY_LABEL)) {
+    safetySelects[k] = select(`safety_${k}`, TRI, triValue(o[k]));
+    safety.append(field(label, safetySelects[k]));
+  }
+  form.append(safety);
+
   const relationship = el("input", { type: "text", name: "relationship", value: o.relationship ?? "" });
   const notes = el("textarea", { name: "notes", value: o.notes ?? "" });
   form.append(field("참가자 관계(가족/친구/동료)", relationship), field("메모(P번호만, 이름 금지)", notes));
@@ -150,6 +163,7 @@ function observationForm(row, onSaved) {
       q2: { choice: q2choice.value || null, reasonCode: q2reason.value || null, quote: q2quote.value },
       q3: triParse(q3.value),
       audit,
+      ...Object.fromEntries(Object.keys(SAFETY_LABEL).map((k) => [k, triParse(safetySelects[k].value)])),
       relationship: relationship.value,
       notes: notes.value,
     });
