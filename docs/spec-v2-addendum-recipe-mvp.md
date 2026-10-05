@@ -22,7 +22,7 @@ v2 스펙 위에 **레시피 10개를 순서대로 실행하는 최소 러너**�
 
 ## R2. 레시피 10종과 검증 대상
 
-`recipes/recipes-mvp.json`에 번들한다.
+`lib/recipe-store.js`에 번들한다(런타임 소스는 이 파일이다. 별도 JSON 사본 `recipes/recipes-mvp.json`은 어디서도 import되지 않아 삭제했다).
 
 | ID | 레시피 | Tier | 모달 | 여러 화면 | iframe | OAuth 팝업 | 화면 속 비밀값 | 클립보드 | 캔버스 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -75,10 +75,12 @@ type RecipeStep = {
 ### R4.1 파일
 
 ```
-lib/recipes.js        레시피 로드, 스키마 검증, 레시피 세션 상태 기계
+lib/recipe-store.js   레시피 레지스트리(번들된 R01~R10, 스키마 검증). 런타임 소스
+lib/recipe-engine.js  레시피 세션 상태 기계
 lib/evallog.js        실행 로그 기록·내보내기 (로컬 전용)
-recipes/recipes-mvp.json
 ```
+
+(구현에서 `lib/recipes.js`는 `recipe-store.js`와 `recipe-engine.js`로 나뉘었다. `recipes/recipes-mvp.json`은 삭제됐다.)
 
 기존 `engine.js`는 수정하지 않는다. 러너는 engine을 goal 단위로 호출하는 상위 계층이다.
 

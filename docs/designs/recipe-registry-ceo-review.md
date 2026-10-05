@@ -664,7 +664,7 @@ handleGuidanceDone 순서     | clearSession 후 skipped 읽음         | N(순�
 - [ ] **T8 (P2, human: ~2h / CC: ~15min)** — 레시피 린트 규칙을 `test/recipe-store.test.js`에 추가(site URL 형식, 라벨형 문구, payload 길이, `generic-setup` 예외)(C2, D3)
   - Files: `test/recipe-store.test.js`
   - Verify: 11개 레지스트리 통과 + 규칙별 음성 케이스 실패
-- [ ] **T9 (P3, human: ~1h / CC: ~5min)** — `recipes/recipes-mvp.json` 삭제, `lib/recipe-store.js:1` 주석과 부록 R4.1 갱신(E2)
+- [x] **T9 (P3, human: ~1h / CC: ~5min)** *(완료)* — `recipes/recipes-mvp.json` 삭제, `lib/recipe-store.js:1` 주석과 부록 R4.1 갱신(E2)
   - Files: `recipes/recipes-mvp.json`, `lib/recipe-store.js`, `docs/spec-v2-addendum-recipe-mvp.md`
   - Verify: `grep -rn "recipes-mvp" lib sidepanel background options test`가 0건
 - [x] **T11 / L0 (P1, human: ~2h / CC: ~15min)** *(완료: `docs/observation-checklist.md` 작성, 측정 계약 Part 1 + 관찰자 체크리스트 Part 2)* — 관찰 운영 체크리스트 문서(계정·프로필·동의·정리·"관찰 중 코드 수정 없음")(C1). run 3: **L0로 승격(T1·T2·T6·T7보다 먼저)**, 항목 추가: 깨끗한 프로필 시작과 사전 확인, 레시피별 시작 URL 사전 오픈, 권한 대화상자 설명, 창 1개·사이드패널 1개, 코딩 기준 사전 고정과 원문 먼저 기록, 안내 문구 네 곳 감사, `crashOrHang` 종결 절차, 내보내기 확인 후 정리와 `sc.evallog.*`는 최종 보고서 확인 후 한 번 삭제(R18), 안내 문구 감사 다섯 곳(`step.onFail` 포함), `evalRound` 라운드 설정 절차(`runner-first.md`의 세션 준비·세션 후 정리와 일치). 측정 계약(이벤트·식별 계약, 종결 결과 목록, 계획 run 명단)을 같은 문서에 고정한다

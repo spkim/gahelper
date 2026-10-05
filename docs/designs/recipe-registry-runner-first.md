@@ -95,7 +95,7 @@ Mode: Startup
 - 있음: 러너 `lib/recipe-engine.js`, `lib/recipe-resolver.js`, `lib/recipe-store.js`(R01~R10 정의), 테스트 `test/recipe-*.test.js`, 사이드패널 `recipe-pick`/`recipe-done` 화면, guard/scrub/payload 보안 테스트.
 - 없음: `lib/evallog.js`(부록 R4.7 실행 로그)와 `userConfirmedReal` 기록. **A 단계의 첫 구현 작업이다.** 이전 초안의 "evallog만 채우면 된다"는 틀린 가정이었다.
 - 이름 대응: 부록 R이 말하는 `lib/recipes.js`(레시피 로드·세션 상태 기계)는 현재 `lib/recipe-engine.js`와 `lib/recipe-store.js`에 해당한다. 부록의 백엔드 언급은 `api-server/`(Postgres+Docker, 이 단계에서는 사용하지 않음)를 가리킨다.
-- 스키마 상태: 런타임은 `lib/recipe-store.js`(`name`, `goals[].label`)를 읽는다. 부록 R3 스키마(`title`, `steps[].goalText`)를 쓰는 `recipes/recipes-mvp.json`은 어디에서도 import되지 않는다. A 단계에서는 `recipe-store.js`를 그대로 쓰고 통일은 B 이전으로 미룬다.
+- 스키마 상태: 런타임은 `lib/recipe-store.js`(`name`, `goals[].label`)를 읽는다. 부록 R3 스키마(`title`, `steps[].goalText`)를 쓰던 `recipes/recipes-mvp.json`은 어디에서도 import되지 않아 삭제했다(T9). A 단계에서는 `recipe-store.js`를 그대로 쓰고 스키마 통일은 B 이전으로 미룬다.
 
 ## Tester setup plan
 - 개발자 본인이 설치와 설정을 한다(압축 해제된 확장 로드, 크롬 116 이상, 옵션 페이지에 테스트용 LLM API 키 입력). 이 사전 준비 약 10분은 세션 시간에 포함하지 않는다.
