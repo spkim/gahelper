@@ -1,26 +1,10 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { installChromeMock } from './helpers/chrome-storage-mock.js';
 
 // ─── chrome.storage.session polyfill ──────────────────────────────────────────
 // recipe-engine.js 의 persist() 가 chrome.storage.session 을 사용하므로 먼저 설치.
-let _store = {};
-
-if (!globalThis.chrome) {
-  globalThis.chrome = {
-    storage: {
-      session: {
-        get: async (key) => {
-          const val = _store[key];
-          return val !== undefined ? { [key]: JSON.parse(JSON.stringify(val)) } : {};
-        },
-        set: async (obj) => {
-          for (const [k, v] of Object.entries(obj)) _store[k] = v;
-        },
-      },
-      local: { get: async () => ({}), set: async () => {} },
-    },
-  };
-}
+const mock = installChromeMock();
 
 import {
   createRecipeSession, getRecipeSession, clearRecipeSession,
@@ -33,13 +17,13 @@ const TAB = 2001;
 
 async function fresh(recipeId = 'R04') {
   await clearRecipeSession(TAB);
-  _store = {};
+  mock.reset();
   return createRecipeSession(TAB, recipeId);
 }
 
 beforeEach(async () => {
   await clearRecipeSession(TAB);
-  _store = {};
+  mock.reset();
 });
 
 // ─── createRecipeSession ───────────────────────────────────────────────────

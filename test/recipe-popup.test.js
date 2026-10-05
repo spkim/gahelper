@@ -1,16 +1,8 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { installChromeMock } from "./helpers/chrome-storage-mock.js";
 
-// chrome.storage.session mock
-const storageData = {};
-globalThis.chrome = {
-  storage: {
-    session: {
-      get: async (key) => ({ [key]: storageData[key] }),
-      set: async (obj) => { Object.assign(storageData, obj); },
-    },
-  },
-};
+installChromeMock();
 
 import {
   createRecipeSession,
