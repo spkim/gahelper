@@ -329,3 +329,21 @@ button:focus-visible {
     transition: none !important;
   }
 }
+
+/* ─── 관찰 체크시트 ─── */
+.cs-section { display: flex; flex-direction: column; gap: 14px; }
+.cs-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.cs-subtitle { margin: 6px 0 0; font-size: 14px; }
+.cs-summary, .cs-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cs-summary li { font-size: 13px; color: var(--muted); }
+.cs-run { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+.cs-run summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; }
+.cs-run[data-status="in_progress"] { border-color: var(--azure); }
+.cs-badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.cs-badge[data-tone="ok"] { color: var(--moss); border-color: var(--moss); }
+.cs-badge[data-tone="bad"] { color: var(--clay); border-color: var(--clay); }
+.cs-body { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.cs-body textarea { font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 60px; resize: vertical; }
+.cs-audit { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.cs-export { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cs-section [hidden] { display: none !important; }

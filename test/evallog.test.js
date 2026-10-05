@@ -54,6 +54,32 @@ describe("pure helpers", () => {
   });
 });
 
+describe("coded rounds", () => {
+  const obs = { q1: 1, q2: { choice: "keep", reasonCode: "tedious", quote: "" }, q3: false };
+  it("isCodedObservation requires q1, q2.choice and q3", () => {
+    assert.equal(E.isCodedObservation(obs), true);
+    assert.equal(E.isCodedObservation({ ...obs, q1: null }), false);
+    assert.equal(E.isCodedObservation({ ...obs, q2: { choice: null } }), false);
+    assert.equal(E.isCodedObservation({ ...obs, q3: null }), false);
+    assert.equal(E.isCodedObservation(undefined), false);
+  });
+
+  it("summarizeParticipants groups by round and participant, nondev planned 2", () => {
+    const row = (participantId, evalRound, tester, o) => ({ run: { participantId, evalRound, tester }, obs: o });
+    const out = E.summarizeParticipants([
+      row("P1", 1, "nondev", obs),
+      row("P1", 1, "nondev", null),
+      row("P1", 2, "nondev", obs),
+      row("dev", 1, "dev", obs),
+    ]);
+    assert.deepEqual(out.map((g) => [g.evalRound, g.participantId, g.runs, g.coded, g.plannedRuns]), [
+      [1, "dev", 1, 1, null],
+      [1, "P1", 2, 1, 2],
+      [2, "P1", 1, 1, 2],
+    ]);
+  });
+});
+
 describe("event lifecycle", () => {
   it("created → goal_done(done) → completed, active mapping kept until cleared", async () => {
     await E.onRecipeEvent(created());
