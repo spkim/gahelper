@@ -101,6 +101,25 @@ describe("resolve() — attempts 반환 형식과 실패 모드", () => {
     assert.equal(firstUser.previousAttemptFailed, undefined);
   });
 
+  it("공급자 오류(HTTP 429)는 json_parse_error 가 아니라 provider_error 로 기록되고 재시도 안내는 그대로다", async () => {
+    stubFetch([{ ok: false, status: 429, json: async () => ({}) }, okJson(GOOD)]);
+    const res = await resolve(PROVIDER, "설정 열기", SIG);
+    assert.deepEqual(res.attempts, [{ reasons: ["provider_error"] }, { reasons: [] }]);
+    const retryUser = JSON.parse(calls[1].messages[0].content);
+    assert.match(retryUser.reasons, /json_parse_error/);
+  });
+
+  it("공급자 오류가 끝까지 이어지면 던지고 attempts 가 모두 provider_error", async () => {
+    stubFetch([{ ok: false, status: 401, json: async () => ({}) }, { ok: false, status: 401, json: async () => ({}) }]);
+    await assert.rejects(
+      () => resolve(PROVIDER, "설정 열기", SIG),
+      (err) => {
+        assert.deepEqual(err.attempts, [{ reasons: ["provider_error"] }, { reasons: ["provider_error"] }]);
+        return true;
+      },
+    );
+  });
+
   it("깨진 JSON 두 번: 던지고 attempts 2건", async () => {
     stubFetch([okText("{ x"), okText("[1,")]);
     await assert.rejects(

@@ -347,3 +347,5 @@ button:focus-visible {
 .cs-audit { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
 .cs-export { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cs-section [hidden] { display: none !important; }
+.cs-body textarea:focus { outline: none; border-color: var(--azure); box-shadow: 0 0 0 3px color-mix(in srgb, var(--azure) 22%, transparent); }
+.cs-run summary:focus-visible { outline: 2px solid var(--azure); outline-offset: 2px; }

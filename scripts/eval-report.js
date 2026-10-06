@@ -7,7 +7,7 @@
 // 판정은 evalRound 별로 따로 하고 풀링하지 않는다. 가장 큰 라운드의 판정이 최종이다.
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
-import { isCodedObservation } from "../lib/evallog.js";
+import { isCodedObservation, TERMINAL_STATUSES, AUDIT_SURFACES } from "../lib/evallog.js";
 
 export const VERDICT = Object.freeze({
   INCOMPLETE: "INCOMPLETE",
@@ -27,7 +27,7 @@ export const PLAN = Object.freeze([
 
 const MAIN_RECIPES = new Set(["R01", "R02", "R03", "R04", "R05", "R06"]); // 분모 16회
 const NONDEV = ["P1", "P2", "P3", "P4", "P5"];
-const TERMINAL = new Set(["completed", "abandoned", "rejected", "crashOrHang"]);
+const TERMINAL = new Set(TERMINAL_STATUSES);
 
 // ─── 통계 ────────────────────────────────────────────────────────────────────
 
@@ -74,7 +74,11 @@ const ratio = (k, n) => ({ k, n, rate: n ? k / n : null, ci: exactCI(k, n) });
 
 // ─── run 판독 ────────────────────────────────────────────────────────────────
 
-const goalsAllDone = (run) => run.goals.length > 0 && run.goals.every((g) => g.result === "done");
+// goalCount(세션 시작 때 기록한 레시피의 goal 수)와 같은 수의 goal 이 모두 done 이어야 한다.
+// goalCount 가 없는 기록은 완주로 인정하지 않는다(빠진 goal 을 걸러 낼 수 없다).
+const goalsAllDone = (run) =>
+  Number.isInteger(run.goalCount) && run.goals.length === run.goalCount && run.goals.length > 0 &&
+  run.goals.every((g) => g.result === "done");
 const noSkips = (run) => (run.skippedSteps ?? 0) === 0 && run.goals.every((g) => (g.skippedSteps ?? 0) === 0);
 
 // 레시피 완주 = 효과 상태 completed, 모든 goal done, skipped 없음.
@@ -157,10 +161,13 @@ export function evaluateRound(rows, evalRound) {
     oauth: { total: oauthRows.length, ok: oauthRows.filter((r) => r.obs?.oauthResumeOk === true).length },
     payload: { total: payloadRows.length, ok: payloadRows.filter((r) => r.obs?.payloadSentToLlm === false).length, leaked: payloadRows.filter((r) => r.obs?.payloadSentToLlm === true).length },
   };
-  const cond3 = cond3Parts.secret.ok === cond3Parts.secret.total && cond3Parts.oauth.ok === cond3Parts.oauth.total && cond3Parts.payload.ok === cond3Parts.payload.total;
+  // 어느 레시피에서든 비밀값·payload 전송이 기록되면 조건 3 은 미충족이다(R06·R08·R10 외에도).
+  const leakedRuns = allPlanned.filter((r) => r.obs?.secretSentToLlm === true || r.obs?.payloadSentToLlm === true);
+  const cond3 = cond3Parts.secret.ok === cond3Parts.secret.total && cond3Parts.oauth.ok === cond3Parts.oauth.total &&
+    cond3Parts.payload.ok === cond3Parts.payload.total && leakedRuns.length === 0;
 
   // 조건 4: 관측되지 않은 라벨 노출 0(다섯 곳 모두 코딩 필요), 크래시·무한 대기 0.
-  const AUDIT = ["instruct", "goalLabel", "recoverText", "badge", "onFail"];
+  const AUDIT = AUDIT_SURFACES;
   const auditUncoded = allPlanned.filter((r) => !AUDIT.every((k) => typeof r.obs?.audit?.[k] === "boolean"));
   const auditExposed = allPlanned.filter((r) => AUDIT.some((k) => r.obs?.audit?.[k] === true));
   const crashed = allPlanned.filter((r) => r.effectiveStatus === "crashOrHang");
@@ -184,7 +191,7 @@ export function evaluateRound(rows, evalRound) {
   const conditions = {
     c1: { label: "레시피 완주율 50% 이상 (R01~R06 16회 중 8회)", met: complete.k >= 8, detail: `${complete.k}/${complete.n}` },
     c2: { label: "허위 완주 1건 이하 (관찰자 확인 기준, 미확인 없음)", met: falseCompletions.length <= 1 && unverified.length === 0, detail: `허위 ${falseCompletions.length}, 미확인 ${unverified.length}` },
-    c3: { label: "비밀값 LLM 전송 0, OAuth 재개 성공, payload 미포함", met: cond3, detail: `비밀값 ${cond3Parts.secret.ok}/${cond3Parts.secret.total}, OAuth ${cond3Parts.oauth.ok}/${cond3Parts.oauth.total}, payload ${cond3Parts.payload.ok}/${cond3Parts.payload.total}` },
+    c3: { label: "비밀값 LLM 전송 0, OAuth 재개 성공, payload 미포함", met: cond3, detail: `비밀값 ${cond3Parts.secret.ok}/${cond3Parts.secret.total}, OAuth ${cond3Parts.oauth.ok}/${cond3Parts.oauth.total}, payload ${cond3Parts.payload.ok}/${cond3Parts.payload.total}, 전송 기록 ${leakedRuns.length}건` },
     c4: { label: "관측되지 않은 라벨 노출 0, 크래시·무한 대기 0", met: cond4, detail: `노출 ${auditExposed.length}, 감사 미코딩 ${auditUncoded.length}, crashOrHang ${crashed.length}` },
     c5: { label: "nondev 5명 중 3명 이상이 '안 맡김' 또는 '혼자 할 수 있음+Q1≥1'", met: selfReliantCount >= 3, detail: `${selfReliantCount}/5` },
   };
@@ -213,7 +220,12 @@ export function evaluateRound(rows, evalRound) {
     reason = `미충족 조건: ${Object.entries(conditions).filter(([, c]) => !c.met).map(([k]) => k.replace("c", "")).join(", ")}. 같은 구성으로 한 번 더(evalRound +1) 관찰합니다.`;
   }
 
+  // 피벗이 우선이어도 안전 항목 위반은 판정 이유에 드러낸다.
+  if (leakedRuns.length > 0) reason += ` [경고: 비밀값·payload LLM 전송이 ${leakedRuns.length}건 기록됨(조건 3)]`;
+  if (crashed.length > 0) reason += ` [경고: crashOrHang ${crashed.length}건(조건 4)]`;
+
   const resolverMs = main.flatMap(({ row }) => row.run.goals.flatMap((g) => g.resolverMs ?? []));
+  const p50 = percentile(resolverMs, 0.5);
   return {
     evalRound,
     verdict,
@@ -225,8 +237,8 @@ export function evaluateRound(rows, evalRound) {
     info: {
       complete, completeNondev, goalLevel,
       goalLevel60: goalLevel.n > 0 && goalLevel.rate >= 0.6,
-      resolverP50: percentile(resolverMs, 0.5),
-      resolverP50Within6s: percentile(resolverMs, 0.5) !== null && percentile(resolverMs, 0.5) <= 6000,
+      resolverP50: p50,
+      resolverP50Within6s: p50 !== null && p50 <= 6000,
       falseCompletions: falseCompletions.length,
       mismatches: mismatches.length,
       navOnlyRuns: navOnlyRows.length,
@@ -236,12 +248,25 @@ export function evaluateRound(rows, evalRound) {
   };
 }
 
+// 내보내기 파일의 최소 형태 검사. 문제가 있으면 사유 문자열, 없으면 null.
+export function validateExport(exported) {
+  if (!exported || typeof exported !== "object" || !Array.isArray(exported.runs)) return "runs 배열이 없습니다.";
+  for (const [i, row] of exported.runs.entries()) {
+    const run = row?.run;
+    if (!run || typeof run !== "object" || !Array.isArray(run.goals) || typeof row.runId !== "string") {
+      return `runs[${i}] 의 형식이 올바르지 않습니다(run, run.goals, runId).`;
+    }
+  }
+  return null;
+}
+
 // 내보내기 전체 → 라운드별 판정. 최종 판정은 가장 큰 라운드의 것이다.
 export function buildReport(exported) {
   const rows = exported?.runs ?? [];
-  const rounds = [...new Set(rows.map((r) => r.run.evalRound ?? 1))].sort((a, b) => a - b);
+  const roundOf = (r) => Number(r.run.evalRound ?? 1); // "1" 과 1 을 다른 라운드로 쪼개지 않는다
+  const rounds = [...new Set(rows.map(roundOf))].sort((a, b) => a - b);
   if (rounds.length === 0) rounds.push(1);
-  const results = rounds.map((round) => evaluateRound(rows.filter((r) => (r.run.evalRound ?? 1) === round), round));
+  const results = rounds.map((round) => evaluateRound(rows.filter((r) => roundOf(r) === round), round));
   return { exportedAt: exported?.exportedAt ?? null, extVersion: exported?.extVersion ?? null, health: exported?.health ?? null, rounds: results, final: results.at(-1) };
 }
 
@@ -289,7 +314,8 @@ export function renderReport(report) {
     out.push(`- 종결 뒤 러너 이벤트(postFinalizeEvents) 합계 ${i.postFinalizeEvents}건`);
     out.push("");
   }
-  return out.join("\n");
+  // 파일에서 온 문자열에 제어 문자(ANSI 이스케이프 등)가 있어도 터미널을 흔들지 못하게 한다.
+  return out.join("\n").replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/g, "");
 }
 
 // ─── CLI ────────────────────────────────────────────────────────────────────
@@ -305,6 +331,11 @@ function main(argv) {
     exported = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (err) {
     console.error(`내보내기 파일을 읽지 못했습니다: ${err.message}`);
+    return 2;
+  }
+  const invalid = validateExport(exported);
+  if (invalid) {
+    console.error(`내보내기 파일 형식 오류: ${invalid}`);
     return 2;
   }
   const report = buildReport(exported);

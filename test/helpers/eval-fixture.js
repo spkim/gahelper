@@ -13,7 +13,7 @@ export function makeRow(slot, i, over = {}) {
   const status = over.status ?? "completed";
   const run = {
     runId, schemaVersion: 1, extVersion: "0.0.0-test", tester: slot.tester, participantId: slot.participantId,
-    evalRound, recipeId: slot.recipeId, tabId: i, status, startedAt: 1000 + i, endedAt: 2000 + i, endCause: null,
+    evalRound, recipeId: slot.recipeId, goalCount: over.goalCount ?? 2, tabId: i, status, startedAt: 1000 + i, endedAt: 2000 + i, endCause: null,
     currentGoalIdx: 2, goals: over.goals ?? [goal(0), goal(1)], popupPauses: 0, skippedSteps: 0, lastSeq: 3, events: [],
     userConfirmedReal: true,
   };

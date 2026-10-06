@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { buildReport, evaluateRound, exactCI, percentile, renderReport, matchPlan, PLAN, VERDICT } from "../scripts/eval-report.js";
+import { buildReport, evaluateRound, exactCI, percentile, renderReport, matchPlan, validateExport, PLAN, VERDICT } from "../scripts/eval-report.js";
 import { buildExport, goal } from "./helpers/eval-fixture.js";
 import { installChromeMock } from "./helpers/chrome-storage-mock.js";
 
@@ -160,6 +160,65 @@ describe("판정", () => {
   });
 });
 
+describe("리뷰 보강", () => {
+  it("goal 수가 레시피보다 적은 run 은 완주가 아니다(goalCount)", () => {
+    const exp = buildExport((slot) => (slot.recipeId === "R01" && slot.participantId === "P1" ? { goals: [goal(1)] } : undefined));
+    assert.equal(final(exp).info.complete.k, 15);
+  });
+
+  it("goalCount 가 없는 기록은 완주로 세지 않는다", () => {
+    const exp = buildExport();
+    exp.runs.forEach((r) => { delete r.run.goalCount; });
+    assert.equal(final(exp).info.complete.k, 0);
+  });
+
+  it("R06·R08·R10 밖의 레시피에서도 전송 기록이 있으면 조건 3 미충족", () => {
+    const exp = buildExport((slot) => (slot.recipeId === "R01" && slot.tester === "dev" ? { obs: { secretSentToLlm: true } } : undefined));
+    assert.equal(final(exp).conditions.c3.met, false);
+  });
+
+  it("피벗이어도 전송 기록과 crashOrHang 경고를 판정 이유에 드러낸다", () => {
+    const exp = buildExport((slot) => {
+      if (slot.recipeId === "R01" && slot.tester === "dev") return { obs: { secretSentToLlm: true } };
+      if (isMain(slot)) return { goals: [goal(0), goal(1, "blocked"), goal(2, "blocked"), goal(3, "blocked"), goal(4, "blocked")], status: "abandoned" };
+      return undefined;
+    });
+    const r = final(exp);
+    assert.equal(r.verdict, VERDICT.PIVOT);
+    assert.match(r.reason, /경고: 비밀값·payload/);
+  });
+
+  it("evalRound 가 문자열 1 이어도 같은 라운드로 묶는다", () => {
+    const exp = buildExport();
+    exp.runs.forEach((r, i) => { if (i % 2) r.run.evalRound = "1"; });
+    assert.deepEqual(buildReport(exp).rounds.map((x) => x.evalRound), [1]);
+  });
+
+  it("validateExport: 형식이 틀린 파일을 거른다", () => {
+    assert.match(validateExport(null), /runs/);
+    assert.match(validateExport({ runs: [{ runId: "a", run: { goals: "x" } }] }), /runs\[0\]/);
+    assert.equal(validateExport(buildExport()), null);
+  });
+
+  it("renderReport 는 제어 문자를 지운다", () => {
+    const exp = buildExport();
+    exp.extVersion = "1.0\u001b[31mRED";
+    assert.ok(!renderReport(buildReport(exp)).includes("\u001b"));
+  });
+
+  it("CLI: 형식이 틀린 파일은 종료 코드 2", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evalrep-"));
+    const file = path.join(dir, "bad.json");
+    fs.writeFileSync(file, JSON.stringify({ runs: [{ runId: "a", run: {} }] }));
+    try {
+      execFileSync("node", ["scripts/eval-report.js", file], { stdio: "pipe" });
+      assert.fail("should exit non-zero");
+    } catch (err) {
+      assert.equal(err.status, 2);
+    }
+  });
+});
+
 describe("라운드", () => {
   it("라운드별로 따로 판정하고 마지막 라운드가 최종이다(풀링 없음)", () => {
     const r1 = buildExport((slot) => (slot.recipeId === "R01" && slot.tester === "dev" ? { obs: { observerVerified: null } } : undefined), 1);
@@ -222,7 +281,7 @@ describe("evallog 내보내기와의 연결", () => {
     const ev = await import("../lib/evallog.js");
     await ev.setConfig({ tester: "nondev", participantId: "P1", evalRound: 1 });
     const e = (type, x = {}) => ({ type, tabId: 7, recipeId: "R01", goalIdx: 0, ts: 5, ...x });
-    await ev.onRecipeEvent(e("session_created"));
+    await ev.onRecipeEvent(e("session_created", { goalCount: 1 }));
     await ev.onRecipeEvent(e("goal_done", { status: "done" }));
     const report = buildReport(await ev.exportAll());
     assert.equal(report.final.verdict, VERDICT.INCOMPLETE);

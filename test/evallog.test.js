@@ -139,6 +139,65 @@ describe("event lifecycle", () => {
   });
 });
 
+describe("리뷰 보강: 종결·부착·분류", () => {
+  it("종결된 run 에는 늦은 이벤트·resolve·skip 이 기록을 바꾸지 못한다(late 집계)", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    await E.onRecipeEvent(evt("goal_done", 1, { status: "done" }));
+    const before = JSON.stringify(readRun());
+    await E.onRecipeEvent(evt("goal_blocked", 1));
+    await E.recordResolve(1, { resolverMs: 5, attempts: [{ reasons: ["x"] }] });
+    await E.recordSkip(1);
+    assert.equal(JSON.stringify(readRun()), before);
+    assert.equal((await E.getHealth()).run.late, 3);
+  });
+
+  it("다른 레시피의 늦은 이벤트는 현재 run 에 붙지 않는다", async () => {
+    await E.onRecipeEvent(created());
+    await E.onRecipeEvent({ ...evt("goal_done", 1), recipeId: "OTHER" });
+    assert.equal(readRun().goals.length, 0);
+    assert.equal((await E.getHealth()).run.unmatched, 1);
+  });
+
+  it("done 으로 정리됐는데 완료 이벤트를 잃은 run 은 completed 로 닫는다", async () => {
+    await E.onRecipeEvent(created());
+    await E.onRecipeEvent(evt("session_cleared", 1, { status: "done" }));
+    const run = readRun();
+    assert.equal(run.status, "completed");
+    assert.equal(run.endCause, "done_on_clear");
+  });
+
+  it("session_created 의 goalCount 를 run 에 남긴다", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 3 }));
+    assert.equal(readRun().goalCount, 3);
+  });
+
+  it("recordConfirm 은 저장 여부를 돌려준다", async () => {
+    assert.deepEqual(await E.recordConfirm(99, true), { ok: false });
+    await E.onRecipeEvent(created());
+    assert.deepEqual(await E.recordConfirm(1, true), { ok: true });
+    assert.deepEqual(await E.recordConfirm(1, false), { ok: true }); // 중복도 이미 저장된 것
+    const realSet = mock.local.set;
+    await E.onRecipeEvent(created(2));
+    mock.local.set = async () => { throw new Error("quota"); };
+    try {
+      assert.deepEqual(await E.recordConfirm(2, true), { ok: false });
+    } finally {
+      mock.local.set = realSet;
+    }
+  });
+
+  it("blockedCauseFor", () => {
+    assert.equal(E.blockedCauseFor({ message: "guard_fail", attempts: [{ reasons: ["a"] }] }), "guard_fail");
+    assert.equal(E.blockedCauseFor({ message: "x", attempts: [{ reasons: ["json_parse_error"] }] }), "json_parse_error");
+    assert.equal(E.blockedCauseFor({ message: "x", attempts: [{ reasons: ["provider_error"] }] }), "resolve_error");
+    assert.equal(E.blockedCauseFor(undefined), "resolve_error");
+  });
+
+  it("provider_error 도 알려진 이유 코드다", () => {
+    assert.equal(E.extractReasonCode("provider_error"), "provider_error");
+  });
+});
+
 describe("recording", () => {
   it("recordResolve stores codes only, never label text or secrets", async () => {
     await E.onRecipeEvent(created());

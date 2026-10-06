@@ -103,6 +103,8 @@ function finalizeButtons(row, onDone) {
 
 // 내 저장이 일으킨 storage 변경은 목록을 다시 그리지 않는다(열려 있는 폼과 메시지 유지).
 let selfWriting = false;
+// 입력 중(수정했지만 아직 저장 전)이면 포커스가 밖으로 나가도 목록을 다시 그리지 않는다.
+let dirty = false;
 
 function observationForm(row, onSaved) {
   const o = row.obs ?? {};
@@ -148,7 +150,9 @@ function observationForm(row, onSaved) {
   const relationship = el("input", { type: "text", name: "relationship", value: o.relationship ?? "" });
   const notes = el("textarea", { name: "notes", value: o.notes ?? "" });
   form.append(field("참가자 관계(가족/친구/동료)", relationship), field("메모(P번호만, 이름 금지)", notes));
-  form.append(el("div", { class: "form-actions" }, el("button", { type: "submit", class: "btn-primary", text: "판정 저장" }), status));
+  const submitBtn = el("button", { type: "submit", class: "btn-primary", text: "판정 저장" });
+  form.append(el("div", { class: "form-actions" }, submitBtn, status));
+  form.addEventListener("input", () => { dirty = true; });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -156,7 +160,10 @@ function observationForm(row, onSaved) {
     const audit = {};
     for (const k of Object.keys(AUDIT_LABEL)) audit[k] = triParse(auditSelects[k].value);
     selfWriting = true;
-    const res = await saveObservation(row.runId, {
+    submitBtn.disabled = true;
+    let res;
+    try {
+      res = await saveObservation(row.runId, {
       observerVerified: triParse(verified.value),
       baseline: baseline.value === "" ? null : baseline.value,
       q1: q(q1.value),
@@ -167,7 +174,11 @@ function observationForm(row, onSaved) {
       relationship: relationship.value,
       notes: notes.value,
     });
-    selfWriting = false;
+    } finally {
+      selfWriting = false;
+      submitBtn.disabled = false;
+    }
+    if (res.ok) dirty = false;
     status.textContent = res.ok ? `저장했습니다(수정 ${res.obs.revision}회차).` : `저장하지 못했습니다: ${res.reason}${res.field ? ` (${res.field})` : ""}`;
     if (res.ok) onSaved(res.obs);
   });
@@ -181,12 +192,13 @@ function renderRun(row, refresh) {
   details.dataset.status = row.effectiveStatus;
   const codedBadge = el("span", { class: "cs-badge", text: isCodedObservation(row.obs) ? "코딩됨" : "코딩 전" });
   const finalized = row.obs?.finalOutcome ? " · 관찰자 종결" : "";
+  const statusBadge = el("span", { class: "cs-badge", text: `${STATUS_LABEL[row.effectiveStatus] ?? row.effectiveStatus}${finalized}` });
+  statusBadge.dataset.tone = tone;
   const summary = el("summary", {},
     el("strong", { text: `${run.participantId ?? "(ID 없음)"} · ${run.recipeId ?? "?"}` }),
-    el("span", { class: "cs-badge", text: `${STATUS_LABEL[row.effectiveStatus] ?? row.effectiveStatus}${finalized}` }),
+    statusBadge,
     el("span", { class: "field-hint", text: `round ${run.evalRound} · ${goalsText(run)}` }),
     codedBadge);
-  summary.querySelector(".cs-badge").dataset.tone = tone;
   details.append(summary);
 
   if (row.postFinalizeEvents > 0) {
@@ -227,6 +239,7 @@ async function renderHealth() {
 
 async function refresh() {
   els.stale.hidden = true;
+  dirty = false;
   const rows = await listRuns();
   els.empty.hidden = rows.length !== 0;
   els.runs.replaceChildren();
@@ -255,7 +268,8 @@ els.clearBtn.addEventListener("click", async () => {
   const typed = prompt("모든 평가 기록(sc.evallog.*)을 삭제합니다. 최종 보고서를 확인한 뒤에만 한 번 하세요. 계속하려면 '삭제'를 입력하세요.");
   if (typed !== "삭제") return;
   const res = await clearAll();
-  els.exportStatus.textContent = res.ok ? `삭제했습니다(키 ${res.removed}개). 공급자 설정은 그대로입니다.` : "삭제하지 못했습니다.";
+  els.exportStatus.textContent = res.ok ? `삭제했습니다(키 ${res.removed}개). 참가자 설정도 초기화됐으니 다시 입력하세요. 공급자 설정은 그대로입니다.` : "삭제하지 못했습니다.";
+  await loadConfig();
   await refresh();
 });
 
@@ -264,9 +278,14 @@ els.refresh.addEventListener("click", refresh);
 // 입력 중에는 목록을 다시 그리지 않는다(작성 중인 폼이 사라지지 않게).
 chrome.storage.onChanged.addListener((changes, area) => {
   if (selfWriting || area !== "local" || !Object.keys(changes).some((k) => k.startsWith("sc.evallog."))) return;
-  if ($("cs-runs").contains(document.activeElement)) els.stale.hidden = false;
+  if (dirty || els.runs.contains(document.activeElement)) els.stale.hidden = false;
   else refresh();
 });
 
-await loadConfig();
-await refresh();
+try {
+  await loadConfig();
+  await refresh();
+} catch (err) {
+  els.stale.textContent = `체크시트를 불러오지 못했습니다: ${err?.message ?? err}`;
+  els.stale.hidden = false;
+}

@@ -21,7 +21,7 @@ import {
   currentGoal, markGoalDone, restoreRecipeSessions,
   pauseForPopup, resumeFromPopup, getSessionForPopup, setRecipeEventListener,
 } from "../lib/recipe-engine.js";
-import { onRecipeEvent, recordResolve, recordSkip, recordConfirm, markAbandoned } from "../lib/evallog.js";
+import { onRecipeEvent, recordResolve, recordSkip, recordConfirm, markAbandoned, blockedCauseFor } from "../lib/evallog.js";
 
 // ─── 상수 / 전역 ─────────────────────────────────────────────────────────────
 
@@ -51,8 +51,9 @@ let pollTimer = null;
 let ticking = false;
 let recentGoals = [];
 
+const confirmedTabs = new Set(); // recipe-done 질문에 저장까지 끝낸 탭(UI 표시용, 기록은 evallog)
+
 // session 없는 상태에서의 UI 모드.
-const confirmedTabs = new Set(); // recipe-done 질문에 이미 답한 탭(UI 표시용, 기록은 evallog)
 let uiMode = "prompt"; // "prompt" | "recipe-pick" | "resolving" | "refuse"
 
 // 새로 열린 탭 중 URL 확정을 기다리는 것 (tabId → openerTabId).
@@ -418,8 +419,9 @@ function renderRecipeDone(node) {
   for (const btn of node.querySelectorAll("[data-confirm]")) {
     btn.addEventListener("click", async () => {
       if (!tabId) return;
-      confirmedTabs.add(tabId);
-      await recordConfirm(tabId, btn.dataset.confirm === "yes");
+      for (const b of node.querySelectorAll("[data-confirm]")) b.disabled = true; // 더블클릭 방지
+      const res = await recordConfirm(tabId, btn.dataset.confirm === "yes");
+      if (res?.ok) confirmedTabs.add(tabId); // 저장하지 못했으면 감사 문구 대신 다시 물을 수 있게 둔다
       render(true);
     });
   }
@@ -557,13 +559,10 @@ async function resolveProcedure(session, provider, goalText) {
     resolveResult = await resolve(provider, goalText, sig);
   } catch (err) {
     console.warn("[setup-copilot] resolve 실패", err?.message, err?.reasons);
-    const attempts = err?.attempts ?? [];
-    const lastReasons = attempts.at(-1)?.reasons ?? [];
     recordResolve(session.tabId, {
       resolverMs: Date.now() - resolveStart,
-      attempts,
-      blockedCause: err?.message === "guard_fail" ? "guard_fail"
-        : lastReasons.includes("json_parse_error") ? "json_parse_error" : "resolve_error",
+      attempts: err?.attempts ?? [],
+      blockedCause: blockedCauseFor(err),
     });
     session.status = "blocked";
     session.recoverText = `안내를 만들지 못했습니다: ${err?.message ?? "알 수 없는 오류"}. 잠시 후 다시 시도하거나 수동으로 진행하세요.`;
