@@ -117,10 +117,23 @@ export function matchPlan(rows) {
     if (slot) slot.rows.push(row);
     else unplanned.push(row);
   }
+  // 같은 슬롯에 run 이 여럿이면(재시도) 마지막 시도를 센다. 앞선 시도는 이렇게 다룬다:
+  // - abandoned: 중단된 시도라 "재시도"로 보고만 한다.
+  // - crashOrHang: 멈춤 신호라 지우지 않는다(조건 4·경고에 계속 반영).
+  // - 그 밖(completed·rejected 등): 어느 쪽이 진짜인지 모호하므로 중복으로 보고 INCOMPLETE.
+  for (const s of slots) {
+    s.rows.sort((a, b) => (a.run.startedAt ?? 0) - (b.run.startedAt ?? 0) || String(a.runId).localeCompare(String(b.runId)));
+    s.counted = s.rows.at(-1) ?? null;
+    const earlier = s.rows.slice(0, -1);
+    s.retries = earlier.filter((r) => r.effectiveStatus === "abandoned");
+    s.hangs = earlier.filter((r) => r.effectiveStatus === "crashOrHang");
+    s.conflicts = earlier.filter((r) => r.effectiveStatus !== "abandoned" && r.effectiveStatus !== "crashOrHang");
+  }
   const missing = slots.filter((s) => s.rows.length === 0);
-  const duplicates = slots.filter((s) => s.rows.length > 1);
+  const duplicates = slots.filter((s) => s.conflicts.length > 0);
   const inProgress = rows.filter((r) => !TERMINAL.has(r.effectiveStatus));
-  return { slots, missing, duplicates, unplanned, inProgress };
+  const retryCount = slots.reduce((n, s) => n + s.retries.length + s.hangs.length, 0);
+  return { slots, missing, duplicates, unplanned, inProgress, retryCount };
 }
 
 // ─── 한 라운드 판정 ──────────────────────────────────────────────────────────
@@ -129,7 +142,9 @@ export function evaluateRound(rows, evalRound, health = null) {
   const match = matchPlan(rows);
   const problems = [];
   for (const s of match.missing) problems.push(`기록 없음: ${clean(s.participantId)} ${clean(s.recipeId)}`);
-  for (const s of match.duplicates) problems.push(`중복 기록(명단에 없는 추가 기록): ${clean(s.participantId)} ${clean(s.recipeId)} × ${s.rows.length}`);
+  for (const s of match.duplicates) {
+    problems.push(`중복 기록(앞선 시도가 중단·멈춤이 아니라 어느 쪽을 셀지 모호함): ${clean(s.participantId)} ${clean(s.recipeId)} × ${s.rows.length}`);
+  }
   for (const r of match.unplanned) problems.push(`명단에 없는 기록: ${clean(r.run.participantId)} ${clean(r.run.recipeId)} (${clean(r.runId)})`);
   for (const r of match.inProgress) problems.push(`종결되지 않음: ${clean(r.run.participantId)} ${clean(r.run.recipeId)} (${clean(r.effectiveStatus)})`);
   // 기록 손실(쓰기 실패, 부착하지 못한 이벤트)이 있으면 이 기록으로 판정하지 않는다. late·dup 은 손실이 아니다.
@@ -139,7 +154,9 @@ export function evaluateRound(rows, evalRound, health = null) {
   }
   if (lost.total > 0) problems.push(`기록 손실: 쓰기 실패 ${lost.failed}건, 부착 못 한 이벤트 ${lost.unmatched}건(레시피 밖 사용도 포함). 손실 카운트는 프로필 전체에 누적되므로 새 evalRound 로는 풀리지 않습니다. 원인을 확인하고, 내보내기를 보관한 뒤 평가 기록을 삭제하고 다시 관찰하세요.`);
 
-  const planned = match.slots.flatMap((s) => s.rows.slice(0, 1).map((row) => ({ slot: s, row })));
+  const planned = match.slots.filter((s) => s.counted).map((s) => ({ slot: s, row: s.counted }));
+  // 앞선 시도(재시도·멈춤)도 노출·전송·멈춤 검사에는 포함한다(안전·게이트 신호를 재시도로 지우지 않는다).
+  const everyRow = match.slots.flatMap((s) => s.rows);
   const main = planned.filter(({ slot }) => MAIN_RECIPES.has(slot.recipeId));
   const nondevMain = main.filter(({ slot }) => slot.tester === "nondev");
 
@@ -181,15 +198,15 @@ export function evaluateRound(rows, evalRound, health = null) {
     payload: { total: payloadRows.length, ok: payloadRows.filter((r) => r.obs?.payloadSentToLlm === false).length, leaked: payloadRows.filter((r) => r.obs?.payloadSentToLlm === true).length },
   };
   // 어느 레시피에서든 비밀값·payload 전송이 기록되면 조건 3 은 미충족이다(R06·R08·R10 외에도).
-  const leakedRuns = allPlanned.filter((r) => r.obs?.secretSentToLlm === true || r.obs?.payloadSentToLlm === true);
+  const leakedRuns = everyRow.filter((r) => r.obs?.secretSentToLlm === true || r.obs?.payloadSentToLlm === true);
   const cond3 = cond3Parts.secret.ok === cond3Parts.secret.total && cond3Parts.oauth.ok === cond3Parts.oauth.total &&
     cond3Parts.payload.ok === cond3Parts.payload.total && leakedRuns.length === 0;
 
   // 조건 4: 관측되지 않은 라벨 노출 0(다섯 곳 모두 코딩 필요), 크래시·무한 대기 0.
   const AUDIT = AUDIT_SURFACES;
   const auditUncoded = allPlanned.filter((r) => !AUDIT.every((k) => typeof r.obs?.audit?.[k] === "boolean"));
-  const auditExposed = allPlanned.filter((r) => AUDIT.some((k) => r.obs?.audit?.[k] === true));
-  const crashed = allPlanned.filter((r) => r.effectiveStatus === "crashOrHang");
+  const auditExposed = everyRow.filter((r) => AUDIT.some((k) => r.obs?.audit?.[k] === true));
+  const crashed = everyRow.filter((r) => r.effectiveStatus === "crashOrHang");
   const cond4 = auditUncoded.length === 0 && auditExposed.length === 0 && crashed.length === 0;
 
   // 참가자 단위(R9): 두 회차 코드가 모두 조건을 만족해야 센다.
@@ -263,6 +280,7 @@ export function evaluateRound(rows, evalRound, health = null) {
       navOnlyRuns: navOnlyRows.length,
       navOnlyAndFalse: navOnlyAndFalse.length,
       postFinalizeEvents: rows.reduce((n, r) => n + (r.postFinalizeEvents ?? 0), 0),
+      retries: match.retryCount,
     },
   };
 }
@@ -333,6 +351,7 @@ export function renderReport(report) {
     out.push(`- 허위 완주 ${i.falseCompletions}건, 참가자 답과 관찰자 판정 불일치 ${i.mismatches}건`);
     out.push(`- 화면 이동만 한 절차(nav_only)가 있는 run ${i.navOnlyRuns}건 중 허위 완주와 겹침 ${i.navOnlyAndFalse}건`);
     out.push(`- 종결 뒤 러너 이벤트(postFinalizeEvents) 합계 ${i.postFinalizeEvents}건`);
+    out.push(`- 재시도(같은 참가자·레시피 슬롯의 앞선 중단·멈춤 시도) ${i.retries}건 — 마지막 시도만 셌습니다. 참가자가 같은 과제를 다시 한 것이라 완주율이 부풀 수 있으니 함께 읽으세요.`);
     out.push("");
   }
   // 파일에서 온 문자열에 제어 문자(ANSI 이스케이프 등)가 있어도 터미널을 흔들지 못하게 한다.

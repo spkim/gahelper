@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { buildReport, evaluateRound, exactCI, percentile, renderReport, matchPlan, validateExport, lossCounts, PLAN, VERDICT } from "../scripts/eval-report.js";
-import { buildExport, goal } from "./helpers/eval-fixture.js";
+import { buildExport, goal, makeRow } from "./helpers/eval-fixture.js";
 import { installChromeMock } from "./helpers/chrome-storage-mock.js";
 
 const final = (exp) => buildReport(exp).final;
@@ -216,6 +216,71 @@ describe("리뷰 보강", () => {
     } catch (err) {
       assert.equal(err.status, 2);
     }
+  });
+});
+
+describe("같은 슬롯 재시도", () => {
+  // 슬롯의 기존 run 보다 앞선 시도를 한 건 끼워 넣는다(startedAt 이 더 이르다).
+  const slotOf = (participantId, recipeId) => PLAN.find((s) => s.participantId === participantId && s.recipeId === recipeId);
+  function withEarlier(participantId, recipeId, over, idx = 100) {
+    const exp = buildExport();
+    exp.runs.push(makeRow(slotOf(participantId, recipeId), idx, { startedAt: 1, ...over }));
+    return exp;
+  }
+
+  it("앞선 시도가 중단(abandoned)이면 재시도로 보고하고 마지막 시도를 센다", () => {
+    const r = final(withEarlier("P1", "R01", { status: "abandoned", goals: [goal(0, "blocked")] }));
+    assert.equal(r.verdict, VERDICT.PROCEED_B, r.reason);
+    assert.equal(r.problems.length, 0);
+    assert.equal(r.info.retries, 1);
+    assert.equal(r.info.complete.k, 16, "마지막 시도(완주)만 센다");
+  });
+
+  it("순서는 배열 위치가 아니라 startedAt 으로 정한다", () => {
+    const exp = withEarlier("P1", "R01", { status: "abandoned", goals: [] });
+    exp.runs.reverse();
+    assert.equal(final(exp).verdict, VERDICT.PROCEED_B);
+  });
+
+  it("마지막 시도도 중단이면 그 시도가 센다(완주 아님)", () => {
+    const exp = buildExport((slot) => (slot.participantId === "P1" && slot.recipeId === "R01" ? { status: "abandoned", startedAt: 5000 } : undefined));
+    exp.runs.push(makeRow(slotOf("P1", "R01"), 100, { status: "abandoned", startedAt: 1 }));
+    const r = final(exp);
+    assert.equal(r.info.complete.k, 15);
+    assert.equal(r.info.retries, 1);
+    assert.equal(r.problems.length, 0);
+  });
+
+  it("앞선 시도가 crashOrHang 이면 재시도로 지워지지 않고 조건 4 에 계속 걸린다", () => {
+    const r = final(withEarlier("P2", "R02", { status: "in_progress", obs: { finalOutcome: "crashOrHang" } }));
+    assert.equal(r.problems.length, 0, "재시도가 있으면 INCOMPLETE 가 아니다");
+    assert.equal(r.conditions.c4.met, false);
+    assert.equal(r.info.retries, 1);
+    assert.match(r.reason, /crashOrHang/);
+  });
+
+  it("앞선 시도의 관측되지 않은 라벨 노출과 비밀값 전송도 계속 센다", () => {
+    const exposed = final(withEarlier("P3", "R03", { status: "abandoned", obs: { audit: { instruct: true, goalLabel: false, recoverText: false, badge: false, onFail: false } } }));
+    assert.equal(exposed.conditions.c4.met, false);
+    const leaked = final(withEarlier("P3", "R03", { status: "abandoned", obs: { secretSentToLlm: true } }));
+    assert.equal(leaked.conditions.c3.met, false);
+  });
+
+  it("앞선 시도가 completed 이면 어느 쪽을 셀지 모호해 INCOMPLETE", () => {
+    const r = final(withEarlier("P1", "R01", { status: "completed" }));
+    assert.equal(r.verdict, VERDICT.INCOMPLETE);
+    assert.match(r.problems.join("\n"), /중복 기록.*P1 R01/);
+  });
+
+  it("앞선 시도가 아직 in_progress 이면 종결 필요 문제로 남는다", () => {
+    const r = final(withEarlier("P1", "R01", { status: "in_progress" }));
+    assert.equal(r.verdict, VERDICT.INCOMPLETE);
+    assert.match(r.problems.join("\n"), /종결되지 않음/);
+  });
+
+  it("리포트에 재시도 건수와 부풀 수 있다는 안내가 나온다", () => {
+    const text = renderReport(buildReport(withEarlier("P1", "R01", { status: "abandoned" })));
+    assert.match(text, /재시도.*1건/);
   });
 });
 
