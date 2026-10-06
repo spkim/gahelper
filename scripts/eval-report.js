@@ -86,6 +86,12 @@ export function isFullCompletion(row) {
   return row.effectiveStatus === "completed" && goalsAllDone(row.run) && noSkips(row.run);
 }
 
+// 조건 1 의 완주 = 기록된 완주(isFullCompletion) + 관찰자가 manualCheck 로 확인(observerVerified === true).
+// 확인하지 않았거나 아니라고 본 run 은 완주로 세지 않는다.
+export function isVerifiedCompletion(row) {
+  return isFullCompletion(row) && row.obs?.observerVerified === true;
+}
+
 // 코딩된 회차에서 "안 맡김" 또는 (혼자 할 수 있음 그리고 Q1 ≥ 1).
 function meetsSelfReliance(obs) {
   return isCodedObservation(obs) && (obs.q2.choice === "keep" || (obs.q3 === true && obs.q1 >= 1));
@@ -161,8 +167,10 @@ export function evaluateRound(rows, evalRound, health = null) {
   const nondevMain = main.filter(({ slot }) => slot.tester === "nondev");
 
   // 완주율(분모 R01~R06 16회).
-  const complete = ratio(main.filter(({ row }) => isFullCompletion(row)).length, main.length);
-  const completeNondev = ratio(nondevMain.filter(({ row }) => isFullCompletion(row)).length, nondevMain.length);
+  // 조건 1 은 관찰자 확인 완주를 센다. 기록만 된 완주는 보고용(recordedComplete)으로 따로 둔다.
+  const complete = ratio(main.filter(({ row }) => isVerifiedCompletion(row)).length, main.length);
+  const completeNondev = ratio(nondevMain.filter(({ row }) => isVerifiedCompletion(row)).length, nondevMain.length);
+  const recordedComplete = ratio(main.filter(({ row }) => isFullCompletion(row)).length, main.length);
 
   // goal 단위 완주율(시도한 goal 기준, 수동 진행 없이 done).
   let attempted = 0;
@@ -225,7 +233,7 @@ export function evaluateRound(rows, evalRound, health = null) {
   const pivotCount = participants.filter((p) => p.pivotSignal).length;
 
   const conditions = {
-    c1: { label: "레시피 완주율 50% 이상 (R01~R06 16회 중 8회)", met: complete.k >= 8, detail: `${complete.k}/${complete.n}` },
+    c1: { label: "레시피 완주율 50% 이상 (관찰자 확인 완주, R01~R06 16회 중 8회)", met: complete.k >= 8, detail: `${complete.k}/${complete.n}` },
     c2: { label: "허위 완주 1건 이하 (관찰자 확인 기준, 미확인 없음)", met: falseCompletions.length <= 1 && unverified.length === 0, detail: `허위 ${falseCompletions.length}, 미확인 ${unverified.length}` },
     c3: { label: "비밀값 LLM 전송 0, OAuth 재개 성공, payload 미포함", met: cond3, detail: `비밀값 ${cond3Parts.secret.ok}/${cond3Parts.secret.total}, OAuth ${cond3Parts.oauth.ok}/${cond3Parts.oauth.total}, payload ${cond3Parts.payload.ok}/${cond3Parts.payload.total}, 전송 기록 ${leakedRuns.length}건` },
     c4: { label: "관측되지 않은 라벨 노출 0, 크래시·무한 대기 0", met: cond4, detail: `노출 ${auditExposed.length}, 감사 미코딩 ${auditUncoded.length}, crashOrHang ${crashed.length}` },
@@ -271,7 +279,7 @@ export function evaluateRound(rows, evalRound, health = null) {
     pivot,
     participants,
     info: {
-      complete, completeNondev, goalLevel,
+      complete, completeNondev, recordedComplete, goalLevel,
       goalLevel60: goalLevel.n > 0 && goalLevel.rate >= 0.6,
       resolverP50: p50,
       resolverP50Within6s: p50 !== null && p50 <= 6000,
@@ -344,7 +352,8 @@ export function renderReport(report) {
     out.push("");
     out.push("### 보고(게이트 아님)");
     const i = r.info;
-    out.push(`- 레시피 완주율(R01~R06): ${i.complete.k}/${i.complete.n}${ci(i.complete)}`);
+    out.push(`- 레시피 완주율(R01~R06, 관찰자 확인 기준): ${i.complete.k}/${i.complete.n}${ci(i.complete)}`);
+    out.push(`- 기록된 완주(관찰자 확인 전, 보고용): ${i.recordedComplete.k}/${i.recordedComplete.n}`);
     out.push(`- nondev 하위 합계: ${i.completeNondev.k}/${i.completeNondev.n}${ci(i.completeNondev)}`);
     out.push(`- goal 단위 완주율: ${i.goalLevel.k}/${i.goalLevel.n}${ci(i.goalLevel)} — 60% 이상 ${i.goalLevel60 ? "예" : "아니오"}`);
     out.push(`- resolver 응답 p50: ${i.resolverP50 === null ? "측정 없음" : `${i.resolverP50}ms`} — 6초 이하 ${i.resolverP50Within6s ? "예" : "아니오"}`);

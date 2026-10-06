@@ -216,9 +216,19 @@ describe("reconcile 로 닫힌 run 의 관찰자 종결 (D2)", () => {
     assert.equal((await E.finalizeRun(id, "abandoned")).reason, "already_finalized", "한 번만");
   });
 
-  it("관찰자·정상 경로로 닫힌 run 은 여전히 종결할 수 없다", async () => {
+  it("탭을 닫거나 다시 시작해 cleared 로 닫힌 run 도 한 번 crashOrHang 으로 덮을 수 있다", async () => {
     await E.onRecipeEvent(created(1, { goalCount: 1 }));
     await E.onRecipeEvent(evt("session_cleared", 1, { status: "running" })); // cleared
+    const id = runKeys()[0].slice("sc.evallog.run.".length);
+    assert.equal(readRun().endCause, "cleared");
+    assert.equal((await E.finalizeRun(id, "crashOrHang")).ok, true);
+    assert.equal((await E.listRuns())[0].effectiveStatus, "crashOrHang");
+    assert.equal((await E.finalizeRun(id, "abandoned")).reason, "already_finalized");
+  });
+
+  it("정상 완료·rejected 로 닫힌 run 은 여전히 종결할 수 없다", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    await E.onRecipeEvent(evt("goal_done", 1, { status: "done" }));
     const id = runKeys()[0].slice("sc.evallog.run.".length);
     assert.equal((await E.finalizeRun(id, "crashOrHang")).reason, "already_terminal");
   });
@@ -327,7 +337,7 @@ describe("2차 리뷰 보강", () => {
   });
 
   it("finalizeRun: endCause 별로 종결 가능 여부를 가른다", async () => {
-    for (const [cause, status, ok] of [["reconcile", "abandoned", true], ["replaced", "abandoned", false], ["cleared", "abandoned", false], ["done_on_clear", "completed", false]]) {
+    for (const [cause, status, ok] of [["reconcile", "abandoned", true], ["replaced", "abandoned", true], ["cleared", "abandoned", true], ["done", "completed", false], ["done_on_clear", "completed", false]]) {
       mock.reset();
       mock.local.seed({ "sc.evallog.run.x": { runId: "x", status, endCause: cause, goals: [], events: [], tabId: 1 } });
       assert.equal((await E.finalizeRun("x", "crashOrHang")).ok, ok, cause);

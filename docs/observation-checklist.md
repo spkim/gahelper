@@ -29,7 +29,7 @@
 ### 1.3 run 상태와 종결 결과
 - **상태**: `in_progress` → `completed`(모든 goal `done`) / `abandoned`(시작 후 중단: 재시작, 패널 무효화, 탭 닫힘, 새 레시피 시작) / `rejected`(시작 자체가 거부됨, `blockedCause` 기록). `crashOrHang`은 관찰자 종결 결과다.
 - **종결 결과 목록(고정)**: `completed`, `abandoned`, `rejected`, `crashOrHang`. 이 밖의 값은 없다.
-- **관찰자 종결 동작**: 체크시트가 `in_progress` run을 `abandoned` 또는 `crashOrHang`으로 종결한다. `sc.evallog.obs.<runId>`의 `finalOutcome`에만 쓰고 run 키를 바꾸지 않는다. 이미 종결 상태인 run에는 거부하고, 종결은 되돌릴 수 없다. 관찰자 판정 저장은 화면이 읽은 `revision`보다 저장된 것이 새로우면 `stale`로 거부한다(다른 옵션 탭이 먼저 저장한 안전 항목을 옛 값으로 덮지 않게). **예외:** 패널을 다시 열 때 시스템이 추측으로 닫은 run(`endCause`가 `reconcile`인 `abandoned`)은 관찰자가 한 번 `crashOrHang`/`abandoned`로 덮을 수 있다(멈춘 확장이 재시작 뒤 단순 중단으로 기록되는 것을 막는다).
+- **관찰자 종결 동작**: 체크시트가 `in_progress` run을 `abandoned` 또는 `crashOrHang`으로 종결한다. `sc.evallog.obs.<runId>`의 `finalOutcome`에만 쓰고 run 키를 바꾸지 않는다. 이미 종결 상태인 run에는 거부하고, 종결은 되돌릴 수 없다. 관찰자 판정 저장은 화면이 읽은 `revision`보다 저장된 것이 새로우면 `stale`로 거부한다(다른 옵션 탭이 먼저 저장한 안전 항목을 옛 값으로 덮지 않게). **예외:** 시스템이 추측으로 닫은 run(`abandoned`이고 `endCause`가 `reconcile`·`cleared`·`replaced`: 패널 재오픈, 탭 닫힘·다시 시작)은 관찰자가 한 번 `crashOrHang`/`abandoned`로 덮을 수 있다(멈춘 확장이 탭을 닫은 뒤 단순 중단으로 기록되는 것을 막는다). 정상 완료와 `rejected`는 덮을 수 없다.
 - **효과 상태 = `obs.finalOutcome ?? run.status`**. 완전성 규칙의 `in_progress`는 효과 상태 기준이다. 관찰자가 종결한 run에는 러너 쪽 늦은 이벤트(늦게 돌아온 `resolve()` 등)가 기록되지 않고 건강 지표의 `late`로 센다(손실이 아니다). 종결 시각 뒤의 기록된 이벤트는 보고서에 `postFinalizeEvents` 개수로 표시된다.
 - **abandoned 자동 판정**(사이드패널 init): `in_progress` run의 `tabId`가 열린 탭 목록(`chrome.tabs.query`)에 없거나 세션이 없으면 `abandoned`. 판정은 열린 `tabId` 목록을 인자로 받는 순수 함수다.
 - `verified`는 저장하지 않는다. `run`과 `obs`를 `runId`로 조인해 파생한다.
@@ -95,7 +95,7 @@ dev 10회(참가자 ID `dev`, R01~R10 각 1회)와 nondev 10회(P1~P5 × 레시�
 - [ ] 체크시트의 메모·원문 칸에 **키·토큰·비밀번호·URL을 붙여넣지 않는다.** 칸의 스크럽은 휴리스틱이라(접두어가 없는 토큰 등은 통과) 내보내기 파일에 남을 수 있다.
 - [ ] 안내 문구 **다섯 곳**에서 "관측되지 않은 라벨"(그 화면에 실제로 없는 메뉴·버튼·탭 이름)이 나왔는지 각각 확인한다: (a) 단계 안내 문장 `instruct`, (b) 제목 `goalLabel`, (c) 복구 문구, (d) 신뢰 배지, (e) 단계 힌트 `step.onFail`(한 번 실패한 뒤 표시됨). guard는 (a)의 일부만 검사하므로 (b)~(e)는 관찰자만 잡을 수 있다. 나왔으면 어느 곳인지 체크시트에 적는다.
 - [ ] 참가자가 막히거나 실수로 닫아 **같은 레시피를 처음부터 다시** 시키면 앞선 시도는 재시도로 남고 마지막 시도만 센다. 다시 시키기 전에 앞선 시도의 상황을 메모에 적고, Q1~Q3 코딩은 마지막 시도 기준으로 한다. (참가자가 같은 과제를 두 번 해 본 것이니 결과를 읽을 때 감안한다. 앞선 시도가 아직 `in_progress`면 체크시트에서 먼저 종결한다.)
-- [ ] 응답이 오지 않거나 확장이 멈추면 **탭을 닫거나 다시 시작하기 전에 먼저** 체크시트에서 run을 **`crashOrHang`으로 종결**한다. (탭을 닫거나 다시 시작하면 run이 `cleared`/`replaced`로 닫혀 되돌릴 수 없고, 멈춤이 단순 중단으로 기록된다. 패널을 다시 열어 `reconcile`로 닫힌 경우만 한 번 덮어쓸 수 있다.) (러너 timeout은 이 단계에서 넣지 않았다. 무한 대기는 게이트 4가 재는 대상이다.)
+- [ ] 응답이 오지 않거나 확장이 멈추면 **탭을 닫거나 다시 시작하기 전에 먼저** 체크시트에서 run을 **`crashOrHang`으로 종결**한다. (먼저 종결하는 것이 원칙이다. 이미 탭을 닫거나 다시 시작해 `cleared`/`replaced`/`reconcile`로 단순 중단 처리됐다면 체크시트의 해당 run 카드에서 한 번 `crashOrHang`으로 덮을 수 있다.) (러너 timeout은 이 단계에서 넣지 않았다. 무한 대기는 게이트 4가 재는 대상이다.)
 - [ ] `recipe-done`에서 참가자의 "실제로 됐나요? 예/아니오" 답을 기록한다(앱이 `userConfirmedReal`로 저장하며 더블클릭·재열기에는 첫 답만 남긴다).
 - [ ] **관찰자가 `manualCheck`를 직접 확인**한다(아래 표). 결과를 체크시트의 `observerVerified`로 기록한다. 참가자 답과 다르면 불일치로 따로 센다.
 
@@ -140,7 +140,7 @@ dev 10회(참가자 ID `dev`, R01~R10 각 1회)와 nondev 10회(P1~P5 × 레시�
 
 ## 알려진 한계 (관찰 결과를 읽을 때)
 - 표본이 작다. 위 구간이 넓으며 결과는 판단 보조다.
-- 완주율 조건은 dev와 nondev를 합친 값이라 dev 성공이 nondev 실패를 가릴 수 있다. 결과표의 nondev 하위 합계를 함께 본다.
+- 조건 1의 완주는 **관찰자 확인(`observerVerified` 참) 완주**다. 모든 run의 `manualCheck`를 확인하고 체크시트에 기록해야 하며, 빠지면 완주로 세지 않는다(보고서에는 "기록된 완주"가 따로 나온다). 완주율 조건은 dev와 nondev를 합친 값이라 dev 성공이 nondev 실패를 가릴 수 있다. 결과표의 nondev 하위 합계를 함께 본다.
 - 러너는 화면 이동만 한 절차를 목표 달성과 구분하지 않는다. `nav_only` 보고와 허위 완주의 겹침을 본다.
 - 안내 문구의 (b)~(e)는 guard 검사 밖이다. 관찰자 판단이 유일한 증거다.
 - `sidepanel/panel.js` 연결(`recordSkip` 호출 지점, `procedureKind`·이유 코드 계측, `sc.evallog.active` 등록)은 자동·수동 검증이 없다(계획의 D8). 관찰 전에 개발자가 실제 확장에서 한 번 훑어본다.

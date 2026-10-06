@@ -166,6 +166,24 @@ describe("리뷰 보강", () => {
     assert.equal(final(exp).info.complete.k, 15);
   });
 
+  it("조건 1 은 관찰자가 확인한 완주만 센다(기록만 된 완주 9건이면 7/16)", () => {
+    let n = 0;
+    const exp = buildExport((slot) => (isMain(slot) && n++ < 9 ? { obs: { observerVerified: null } } : undefined));
+    const r = final(exp);
+    assert.equal(r.info.recordedComplete.k, 16);
+    assert.equal(r.info.complete.k, 7);
+    assert.equal(r.conditions.c1.met, false);
+    assert.equal(r.conditions.c2.met, false, "미확인도 조건 2 를 막는다");
+  });
+
+  it("관찰자가 허위로 본 완주는 조건 1 에서 빠진다(허위 1건은 조건 2 가 허용해도 8/16 선을 못 채운다)", () => {
+    let n = 0;
+    const exp = buildExport((slot) => (isMain(slot) && n++ < 9 ? { obs: { observerVerified: false } } : undefined));
+    const r = final(exp);
+    assert.equal(r.info.complete.k, 7);
+    assert.equal(r.conditions.c1.met, false);
+  });
+
   it("goalCount 가 없는 기록은 완주로 세지 않는다", () => {
     const exp = buildExport();
     exp.runs.forEach((r) => { delete r.run.goalCount; });
@@ -419,7 +437,8 @@ describe("evallog 내보내기와의 연결", () => {
     await ev.onRecipeEvent(e("goal_done", { status: "done" }));
     const report = buildReport(await ev.exportAll());
     assert.equal(report.final.verdict, VERDICT.INCOMPLETE);
-    assert.equal(report.final.info.complete.k, 1);
+    assert.equal(report.final.info.recordedComplete.k, 1);
+    assert.equal(report.final.info.complete.k, 0, "관찰자 확인이 없으면 조건 1 완주로 세지 않는다");
     assert.match(report.final.problems.join("\n"), /기록 없음: dev R01/);
   });
 });
