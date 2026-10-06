@@ -198,6 +198,32 @@ describe("리뷰 보강: 종결·부착·분류", () => {
   });
 });
 
+describe("reconcile 로 닫힌 run 의 관찰자 종결 (D2)", () => {
+  async function reconciledRun() {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    await E.markAbandoned([]); // 탭이 열려 있지 않음 → reconcile
+    return runKeys()[0].slice("sc.evallog.run.".length);
+  }
+
+  it("reconcile 로 abandoned 된 run 은 crashOrHang 으로 종결할 수 있고 효과 상태가 바뀐다", async () => {
+    const id = await reconciledRun();
+    assert.equal(readRun().endCause, "reconcile");
+    const f = await E.finalizeRun(id, "crashOrHang");
+    assert.equal(f.ok, true);
+    const [row] = await E.listRuns();
+    assert.equal(row.effectiveStatus, "crashOrHang");
+    assert.equal(readRun().status, "abandoned", "run 키는 바뀌지 않는다");
+    assert.equal((await E.finalizeRun(id, "abandoned")).reason, "already_finalized", "한 번만");
+  });
+
+  it("관찰자·정상 경로로 닫힌 run 은 여전히 종결할 수 없다", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    await E.onRecipeEvent(evt("session_cleared", 1, { status: "running" })); // cleared
+    const id = runKeys()[0].slice("sc.evallog.run.".length);
+    assert.equal((await E.finalizeRun(id, "crashOrHang")).reason, "already_terminal");
+  });
+});
+
 describe("recording", () => {
   it("recordResolve stores codes only, never label text or secrets", async () => {
     await E.onRecipeEvent(created());

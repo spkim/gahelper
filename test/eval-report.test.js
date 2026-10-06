@@ -219,6 +219,28 @@ describe("리뷰 보강", () => {
   });
 });
 
+describe("기록 손실과 판정 (D1)", () => {
+  const withHealth = (health) => ({ ...buildExport(), health });
+
+  it("쓰기 실패나 부착 못 한 이벤트가 있으면 INCOMPLETE, 이유에 손실이 드러난다", () => {
+    for (const health of [{ run: { failed: 1 }, obs: {} }, { run: { unmatched: 2 }, obs: {} }, { run: {}, obs: { failed: 1 } }]) {
+      const r = final(withHealth(health));
+      assert.equal(r.verdict, VERDICT.INCOMPLETE);
+      assert.match(r.problems.join("\n"), /기록 손실/);
+    }
+  });
+
+  it("late·dup 만 있으면 손실이 아니다", () => {
+    assert.equal(final(withHealth({ run: { late: 5, dup: 3 }, obs: {} })).verdict, VERDICT.PROCEED_B);
+  });
+
+  it("health 가 없는 내보내기는 그대로 판정한다", () => {
+    const exp = buildExport();
+    delete exp.health;
+    assert.equal(final(exp).verdict, VERDICT.PROCEED_B);
+  });
+});
+
 describe("라운드", () => {
   it("라운드별로 따로 판정하고 마지막 라운드가 최종이다(풀링 없음)", () => {
     const r1 = buildExport((slot) => (slot.recipeId === "R01" && slot.tester === "dev" ? { obs: { observerVerified: null } } : undefined), 1);

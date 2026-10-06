@@ -207,6 +207,10 @@ function renderRun(row, refresh) {
   if (run.userConfirmedReal !== undefined) {
     details.append(el("p", { class: "field-hint", text: `참가자 답(실제로 됐나요?): ${run.userConfirmedReal ? "예" : "아니오"}` }));
   }
+  const reconciled = run.status === "abandoned" && run.endCause === "reconcile" && !row.obs?.finalOutcome;
+  if (reconciled) {
+    details.append(el("p", { class: "card-status", "data-tone": "error", text: "패널을 다시 열 때 자동으로 중단 처리된 run입니다. 실제로 멈췄다면 멈춤·오류로 종결하세요(한 번만, 되돌릴 수 없음)." }), finalizeButtons(row, refresh));
+  }
   if (row.effectiveStatus === "in_progress") {
     details.append(el("p", { class: "field-hint", text: "진행 중인 run은 판정을 저장할 수 없습니다. 끝난 뒤에 입력하거나, 멈췄다면 종결하세요." }), finalizeButtons(row, refresh));
   } else {

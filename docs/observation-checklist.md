@@ -27,7 +27,7 @@
 ### 1.3 run 상태와 종결 결과
 - **상태**: `in_progress` → `completed`(모든 goal `done`) / `abandoned`(시작 후 중단: 재시작, 패널 무효화, 탭 닫힘, 새 레시피 시작) / `rejected`(시작 자체가 거부됨, `blockedCause` 기록). `crashOrHang`은 관찰자 종결 결과다.
 - **종결 결과 목록(고정)**: `completed`, `abandoned`, `rejected`, `crashOrHang`. 이 밖의 값은 없다.
-- **관찰자 종결 동작**: 체크시트가 `in_progress` run을 `abandoned` 또는 `crashOrHang`으로 종결한다. `sc.evallog.obs.<runId>`의 `finalOutcome`에만 쓰고 run 키를 바꾸지 않는다. 이미 종결 상태인 run에는 거부하고, 종결은 되돌릴 수 없다.
+- **관찰자 종결 동작**: 체크시트가 `in_progress` run을 `abandoned` 또는 `crashOrHang`으로 종결한다. `sc.evallog.obs.<runId>`의 `finalOutcome`에만 쓰고 run 키를 바꾸지 않는다. 이미 종결 상태인 run에는 거부하고, 종결은 되돌릴 수 없다. **예외:** 패널을 다시 열 때 시스템이 추측으로 닫은 run(`endCause`가 `reconcile`인 `abandoned`)은 관찰자가 한 번 `crashOrHang`/`abandoned`로 덮을 수 있다(멈춘 확장이 재시작 뒤 단순 중단으로 기록되는 것을 막는다).
 - **효과 상태 = `obs.finalOutcome ?? run.status`**. 완전성 규칙의 `in_progress`는 효과 상태 기준이다. 종결 뒤 러너 쪽 이벤트(늦게 돌아온 `resolve()` 등)는 상태를 바꾸지 못하고 보고서에 `postFinalizeEvents` 개수로만 표시된다.
 - **abandoned 자동 판정**(사이드패널 init): `in_progress` run의 `tabId`가 열린 탭 목록(`chrome.tabs.query`)에 없거나 세션이 없으면 `abandoned`. 판정은 열린 `tabId` 목록을 인자로 받는 순수 함수다.
 - `verified`는 저장하지 않는다. `run`과 `obs`를 `runId`로 조인해 파생한다.

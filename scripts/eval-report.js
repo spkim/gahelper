@@ -96,6 +96,13 @@ function meetsPivotSignal(obs) {
 
 // ─── 명단 대조 ───────────────────────────────────────────────────────────────
 
+// health(내보내기에 담긴 손실·중복 카운트)에서 판정을 막는 손실만 센다.
+export function lossCounts(health) {
+  const failed = (health?.run?.failed ?? 0) + (health?.obs?.failed ?? 0);
+  const unmatched = (health?.run?.unmatched ?? 0) + (health?.obs?.unmatched ?? 0);
+  return { failed, unmatched, total: failed + unmatched };
+}
+
 export function matchPlan(rows) {
   const slots = PLAN.map((slot) => ({ ...slot, rows: [] }));
   const unplanned = [];
@@ -113,13 +120,16 @@ export function matchPlan(rows) {
 
 // ─── 한 라운드 판정 ──────────────────────────────────────────────────────────
 
-export function evaluateRound(rows, evalRound) {
+export function evaluateRound(rows, evalRound, health = null) {
   const match = matchPlan(rows);
   const problems = [];
   for (const s of match.missing) problems.push(`기록 없음: ${s.participantId} ${s.recipeId}`);
   for (const s of match.duplicates) problems.push(`중복 기록(명단에 없는 추가 기록): ${s.participantId} ${s.recipeId} × ${s.rows.length}`);
   for (const r of match.unplanned) problems.push(`명단에 없는 기록: ${r.run.participantId ?? "?"} ${r.run.recipeId ?? "?"} (${r.runId})`);
   for (const r of match.inProgress) problems.push(`종결되지 않음: ${r.run.participantId ?? "?"} ${r.run.recipeId ?? "?"} (${r.effectiveStatus})`);
+  // 기록 손실(쓰기 실패, 부착하지 못한 이벤트)이 있으면 이 기록으로 판정하지 않는다. late·dup 은 손실이 아니다.
+  const lost = lossCounts(health);
+  if (lost.total > 0) problems.push(`기록 손실: 쓰기 실패 ${lost.failed}건, 부착 못 한 이벤트 ${lost.unmatched}건(레시피 밖 사용도 포함). 새 evalRound 로 다시 관찰하거나 원인을 확인하세요.`);
 
   const planned = match.slots.flatMap((s) => s.rows.slice(0, 1).map((row) => ({ slot: s, row })));
   const main = planned.filter(({ slot }) => MAIN_RECIPES.has(slot.recipeId));
@@ -206,7 +216,7 @@ export function evaluateRound(rows, evalRound) {
   let reason;
   if (problems.length > 0) {
     verdict = VERDICT.INCOMPLETE;
-    reason = "계획 run 명단과 기록이 맞지 않습니다. B 진행도 피벗도 내지 않습니다.";
+    reason = "계획 run 명단 또는 기록 건강 상태에 문제가 있습니다. B 진행도 피벗도 내지 않습니다.";
   } else if (pivot.goalLevelBelow30 || pivot.delegateTedious4) {
     verdict = VERDICT.PIVOT;
     reason = pivot.goalLevelBelow30
@@ -266,7 +276,7 @@ export function buildReport(exported) {
   const roundOf = (r) => Number(r.run.evalRound ?? 1); // "1" 과 1 을 다른 라운드로 쪼개지 않는다
   const rounds = [...new Set(rows.map(roundOf))].sort((a, b) => a - b);
   if (rounds.length === 0) rounds.push(1);
-  const results = rounds.map((round) => evaluateRound(rows.filter((r) => roundOf(r) === round), round));
+  const results = rounds.map((round) => evaluateRound(rows.filter((r) => roundOf(r) === round), round, exported?.health ?? null));
   return { exportedAt: exported?.exportedAt ?? null, extVersion: exported?.extVersion ?? null, health: exported?.health ?? null, rounds: results, final: results.at(-1) };
 }
 
