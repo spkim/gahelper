@@ -98,7 +98,9 @@ function finalizeButtons(row, onDone) {
           const res = await finalizeRun(row.runId, outcome);
           if (!res.ok) alert(`종결하지 못했습니다: ${res.reason}`);
         } finally {
-          onDone();
+          // 저장하지 않은 다른 폼이 있으면 목록을 다시 그리지 않고 새로고침을 안내한다.
+          if (anyDirty()) els.stale.hidden = false;
+          else onDone();
         }
       },
     }));
@@ -157,7 +159,9 @@ function observationForm(row, onSaved) {
   form.append(field("참가자 관계(가족/친구/동료)", relationship), field("메모(P번호만, 이름 금지)", notes));
   const submitBtn = el("button", { type: "submit", class: "btn-primary", text: "판정 저장" });
   form.append(el("div", { class: "form-actions" }, submitBtn, status));
+  let editSeq = 0; // 저장 중에 들어온 수정을 "저장됨"으로 오인하지 않게 한다
   form.addEventListener("input", () => {
+    editSeq += 1;
     form.dataset.dirty = "1";
     status.textContent = ""; // 이전 저장 메시지가 새 수정까지 저장된 것처럼 보이지 않게
   });
@@ -169,6 +173,7 @@ function observationForm(row, onSaved) {
     const audit = {};
     for (const k of Object.keys(AUDIT_LABEL)) audit[k] = triParse(auditSelects[k].value);
     selfWriting = true;
+    const seqAtSubmit = editSeq;
     submitBtn.disabled = true;
     let res;
     try {
@@ -188,11 +193,15 @@ function observationForm(row, onSaved) {
       submitBtn.disabled = false;
     }
     if (res.ok) {
-      delete form.dataset.dirty;
+      if (editSeq === seqAtSubmit) delete form.dataset.dirty;
       loadedRevision = res.obs.revision;
     }
     if (res.reason === "stale") {
       status.textContent = "다른 화면에서 먼저 저장됐습니다. 새로고침한 뒤 다시 입력하세요(안전 항목을 옛 값으로 덮지 않으려고 막았습니다).";
+      return;
+    }
+    if (res.ok && editSeq !== seqAtSubmit) {
+      status.textContent = "저장했지만 저장 중에 수정한 내용은 아직 저장되지 않았습니다. 다시 저장하세요.";
       return;
     }
     status.textContent = res.ok ? `저장했습니다(수정 ${res.obs.revision}회차).` : `저장하지 못했습니다: ${res.reason}${res.field ? ` (${res.field})` : ""}`;

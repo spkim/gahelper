@@ -487,15 +487,22 @@ async function grantCurrentTabPermission() {
   try { return await requestOriginPermission(url); } catch { return false; }
 }
 
+let startingRecipe = false; // clear→create 사이에 겹친 시작 클릭이 같은 레시피로 run 을 둘 만들지 않게 한다(resolve 대기 중에는 걸지 않는다)
+
 async function startRecipeFlow(recipeId, hint = {}) {
   const tabId = currentTab?.id;
-  if (!tabId) return;
+  if (!tabId || startingRecipe) return;
 
   // generic-setup 은 RecipeSession 없이 자연어 입력 경로 사용.
   if (recipeId === "generic-setup") return;
 
-  await clearRecipeSession(tabId);
-  await createRecipeSession(tabId, recipeId);
+  startingRecipe = true;
+  try {
+    await clearRecipeSession(tabId);
+    await createRecipeSession(tabId, recipeId);
+  } finally {
+    startingRecipe = false;
+  }
   const goal = currentGoal(tabId);
   if (!goal) return;
 

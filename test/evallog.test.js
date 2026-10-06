@@ -278,6 +278,37 @@ describe("2차 리뷰 보강", () => {
     assert.equal((await E.setConfig({ tester: "dev", participantId: "dev" })).ok, true);
   });
 
+  it("관찰자가 종결한 run 의 session_cleared 는 탭 매핑을 지운다", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    await E.finalizeRun(idOf(), "crashOrHang");
+    await E.onRecipeEvent(evt("session_cleared", 1, { status: "running" }));
+    assert.deepEqual(mock.session.dump()["sc.evallog.active"], {});
+    const n = readRun().events.length;
+    await E.markAbandoned([1]); // 매핑이 없으니 열려 있는 탭이어도 reconcile 대상(이벤트 1건 추가)
+    assert.ok(readRun().events.length >= n);
+  });
+
+  it("clearAll 은 메모리에 남은 손실 카운트도 비운다", async () => {
+    await E.onRecipeEvent(created());
+    const realSet = mock.local.set;
+    mock.local.set = async () => { throw new Error("quota"); };
+    try { await E.recordSkip(1); } finally { mock.local.set = realSet; }
+    assert.equal((await E.getHealth()).run.failed, 1);
+    await E.clearAll();
+    assert.deepEqual((await E.getHealth()).run, {});
+    await E.onRecipeEvent(created(2));
+    assert.deepEqual((await E.getHealth()).run, {}, "삭제 뒤 되살아나지 않는다");
+  });
+
+  it("exportAll 은 run·관찰·건강 상태를 한 번에 읽는다", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    await E.onRecipeEvent(evt("goal_done", 1, { status: "done" }));
+    await E.onRecipeEvent(evt("goal_done", 99)); // unmatched +1
+    const out = await E.exportAll();
+    assert.equal(out.runs.length, 1);
+    assert.equal(out.health.run.unmatched, 1);
+  });
+
   it("blockedCauseFor 는 err.code 를 우선한다", () => {
     assert.equal(E.blockedCauseFor({ code: "guard_fail", message: "다른 문구" }), "guard_fail");
   });

@@ -134,6 +134,9 @@ export function evaluateRound(rows, evalRound, health = null) {
   for (const r of match.inProgress) problems.push(`종결되지 않음: ${clean(r.run.participantId)} ${clean(r.run.recipeId)} (${clean(r.effectiveStatus)})`);
   // 기록 손실(쓰기 실패, 부착하지 못한 이벤트)이 있으면 이 기록으로 판정하지 않는다. late·dup 은 손실이 아니다.
   const lost = lossCounts(health);
+  if (health === null || typeof health !== "object" || typeof health.run !== "object" || typeof health.obs !== "object" || !health.run || !health.obs) {
+    problems.push("기록 건강 상태(health)가 없거나 형식이 올바르지 않습니다. 손실 여부를 확인할 수 없어 판정하지 않습니다.");
+  }
   if (lost.total > 0) problems.push(`기록 손실: 쓰기 실패 ${lost.failed}건, 부착 못 한 이벤트 ${lost.unmatched}건(레시피 밖 사용도 포함). 손실 카운트는 프로필 전체에 누적되므로 새 evalRound 로는 풀리지 않습니다. 원인을 확인하고, 내보내기를 보관한 뒤 평가 기록을 삭제하고 다시 관찰하세요.`);
 
   const planned = match.slots.flatMap((s) => s.rows.slice(0, 1).map((row) => ({ slot: s, row })));
@@ -240,7 +243,7 @@ export function evaluateRound(rows, evalRound, health = null) {
   if (leakedRuns.length > 0) reason += ` [경고: 비밀값·payload LLM 전송이 ${leakedRuns.length}건 기록됨(조건 3)]`;
   if (crashed.length > 0) reason += ` [경고: crashOrHang ${crashed.length}건(조건 4)]`;
 
-  const resolverMs = main.flatMap(({ row }) => row.run.goals.flatMap((g) => g.resolverMs ?? []));
+  const resolverMs = main.flatMap(({ row }) => row.run.goals.flatMap((g) => (Array.isArray(g.resolverMs) ? g.resolverMs : []))).filter(Number.isFinite);
   const p50 = percentile(resolverMs, 0.5);
   return {
     evalRound,

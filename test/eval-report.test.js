@@ -234,10 +234,12 @@ describe("기록 손실과 판정 (D1)", () => {
     assert.equal(final(withHealth({ run: { late: 5, dup: 3 }, obs: {} })).verdict, VERDICT.PROCEED_B);
   });
 
-  it("health 가 없는 내보내기는 그대로 판정한다", () => {
+  it("health 가 없거나 run·obs 블록이 없으면 손실을 확인할 수 없어 INCOMPLETE", () => {
     const exp = buildExport();
     delete exp.health;
-    assert.equal(final(exp).verdict, VERDICT.PROCEED_B);
+    assert.equal(final(exp).verdict, VERDICT.INCOMPLETE);
+    assert.match(final(exp).problems.join("\n"), /건강 상태/);
+    assert.equal(final({ ...buildExport(), health: { run: {} } }).verdict, VERDICT.INCOMPLETE);
   });
 });
 
@@ -271,6 +273,13 @@ describe("2차 리뷰 보강", () => {
     const text = renderReport(buildReport(exp));
     assert.ok(!/^## evalRound 9/m.test(text));
     assert.ok(!text.includes("\u202e"));
+  });
+
+  it("숫자가 아닌 resolverMs 는 p50 에서 제외된다", () => {
+    const exp = buildExport();
+    exp.runs[0].run.goals[0].resolverMs = ["1\n## forged", 2000];
+    const r = final(exp);
+    assert.ok(Number.isFinite(r.info.resolverP50));
   });
 
   it("손실 문구는 새 evalRound 로 풀리지 않는다고 알려 준다", () => {
