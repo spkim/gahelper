@@ -88,7 +88,10 @@ function goalsText(run) {
 
 function finalizeButtons(row, onDone) {
   const wrap = el("div", { class: "form-actions" });
-  for (const [outcome, label] of [["abandoned", "중단(abandoned)으로 종결"], ["crashOrHang", "멈춤·오류(crashOrHang)로 종결"]]) {
+  // 이미 시스템이 abandoned 로 닫은 run 에 "중단으로 종결"은 무의미하고, 한 번뿐인 종결을 소진해 멈춤 정정을 막는다.
+  const outcomes = [["abandoned", "중단(abandoned)으로 종결"], ["crashOrHang", "멈춤·오류(crashOrHang)로 종결"]]
+    .filter(([outcome]) => !(outcome === "abandoned" && row.run.status === "abandoned"));
+  for (const [outcome, label] of outcomes) {
     wrap.append(el("button", {
       type: "button", class: "btn-ghost", text: label,
       onclick: async (e) => {
@@ -234,7 +237,7 @@ function renderRun(row, refresh) {
   }
   const systemClosed = isSystemAbandoned(run) && !row.obs?.finalOutcome;
   if (systemClosed) {
-    details.append(el("p", { class: "card-status", "data-tone": "error", text: "탭을 닫거나 다시 시작하거나 패널을 다시 열어 자동으로 중단 처리된 run입니다. 실제로 멈췄다면 멈춤·오류로 종결하세요(한 번만, 되돌릴 수 없음)." }), finalizeButtons(row, refresh));
+    details.append(el("p", { class: "card-status", "data-tone": "error", text: "탭을 닫거나 다시 시작하거나 패널을 다시 열어 자동으로 중단 처리된 run입니다. 응답이 오지 않아 멈춘 것이 확실할 때만 멈춤·오류로 종결하세요(한 번만, 되돌릴 수 없음). 평범한 재시도나 중단이면 그대로 두세요." }), finalizeButtons(row, refresh));
   }
   if (row.effectiveStatus === "in_progress") {
     details.append(el("p", { class: "field-hint", text: "진행 중인 run은 판정을 저장할 수 없습니다. 끝난 뒤에 입력하거나, 멈췄다면 종결하세요." }), finalizeButtons(row, refresh));

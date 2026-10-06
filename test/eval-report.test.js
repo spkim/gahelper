@@ -176,12 +176,20 @@ describe("리뷰 보강", () => {
     assert.equal(r.conditions.c2.met, false, "미확인도 조건 2 를 막는다");
   });
 
-  it("관찰자가 허위로 본 완주는 조건 1 에서 빠진다(허위 1건은 조건 2 가 허용해도 8/16 선을 못 채운다)", () => {
+  it("허위 1건은 조건 2 가 허용하지만 조건 1 이 독립적으로 막는다(확인 완주 7 + 허위 1 + 중단 8)", () => {
     let n = 0;
-    const exp = buildExport((slot) => (isMain(slot) && n++ < 9 ? { obs: { observerVerified: false } } : undefined));
+    const exp = buildExport((slot) => {
+      if (!isMain(slot)) return undefined;
+      const k = n++;
+      if (k < 7) return undefined; // 확인된 완주
+      if (k === 7) return { obs: { observerVerified: false } }; // 허위 완주 1건
+      return { status: "abandoned", goals: [goal(0, "blocked")], goalCount: 2 };
+    });
     const r = final(exp);
     assert.equal(r.info.complete.k, 7);
+    assert.equal(r.conditions.c2.met, true);
     assert.equal(r.conditions.c1.met, false);
+    assert.notEqual(r.verdict, VERDICT.PROCEED_B);
   });
 
   it("goalCount 가 없는 기록은 완주로 세지 않는다", () => {
