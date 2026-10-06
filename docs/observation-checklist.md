@@ -10,7 +10,7 @@
 
 ### 1.1 run과 식별
 - **run** = 한 참가자(또는 `dev`)가 한 레시피를 한 번 실행한 것. 참가자·레시피 슬롯은 아래 1.6의 계획 run 명단과 대응한다.
-- 모든 run 기록은 `runId`(evallog가 생성), `schemaVersion`, 확장 버전, `tester`(`dev`|`nondev`), `participantId`(`dev` 또는 P1~P5), `recipeId`, `evalRound`(기본 1), run 상태를 가진다.
+- 모든 run 기록은 `runId`(evallog가 생성), `schemaVersion`, 확장 버전, `tester`(`dev`|`nondev`), `participantId`(`dev` 또는 P1~P5), `recipeId`, `goalCount`(세션 시작 때 기록한 레시피의 goal 수), `evalRound`(기본 1), run 상태를 가진다.
 - 엔진은 `runId`와 `seq`를 모른다. **엔진 이벤트**는 `{type, tabId, recipeId, goalIdx, ts}`에 종료 이벤트의 세션 최종 `status`를 더한 형식이고(계획 D4, 제약 1), evallog가 `tabId→runId` 매핑(`sc.evallog.active`, `chrome.storage.session`)으로 `runId`를 붙이고 `seq`를 부여한다. `seq`는 락 안에서 읽은 저장된 최대 seq에서 이어 붙인다(메모리 카운터 아님).
 - 세션이 없을 때의 `clearRecipeSession`은 이벤트를 보내지 않는다. 진행 중 세션이 있을 때 `startRecipeFlow`가 부르는 `clearRecipeSession`은 직전 run을 `abandoned`로 종결한다.
 
@@ -19,27 +19,29 @@
 |---|---|---|
 | `sc.evallog.run.<runId>` | 사이드패널만 | 상태 전이, goal별 기록, `userConfirmedReal`, `skippedSteps`, `procedureKind`, `resolverMs`, `guardRejects`(이유 코드만) |
 | `sc.evallog.obs.<runId>` | 옵션 페이지만 | 관찰자 판정, Q1~Q3 코드와 원문, `observerVerified`, 안내 문구 감사 결과, 안전 확인(`secretSentToLlm`·`oauthResumeOk`·`payloadSentToLlm`), 종결 결과(`finalOutcome`) |
+| `sc.evallog.config` | 옵션 페이지만 | 참가자·`tester`·`evalRound` 설정 |
+| `sc.evallog.stats.run`, `sc.evallog.stats.obs` | 각각 쓰는 쪽(사이드패널, 옵션 페이지) | 기록 손실·중복 카운트(내보내기에 건강 지표로 포함) |
 | `sc.evallog.active` | 사이드패널(`chrome.storage.session`) | `tabId→runId` 매핑 |
 - 모든 읽기-수정-쓰기는 이름 있는 락 `sc.evallog`(`navigator.locks.request`) 안에서 한다. `navigator.locks`가 없으면 화면 안 promise 대기열로 폴백한다. (실측: 확장 페이지 2개 × 30건에서 화면별 대기열만 30/60, 락 60/60.)
 - 목록·내보내기·삭제는 접두어 `sc.evallog.`로 시작하는 키만 다룬다. `sc.settings`(테스트용 LLM API 키 포함)는 읽지도, 내보내지도, 지우지도 않는다.
-- **기록하지 않는 것**: 화면 텍스트, signature, goalText 외의 사용자 입력, 비밀값(`sk-ant-` 등), 라벨 텍스트. `guardRejects`는 이유 코드만 저장하고 알려진 코드(`no_procedure`, `no_steps`, `not_object`, `no_verify`, `no_usedLabels`, `unobserved_label`, `quoted_not_in_usedLabels`, `bad_locator`, `css_locator`, `unobserved_locator`, `unobserved`, `json_parse_error`)에 접두 매칭하며 매칭되지 않으면 `unknown`으로 저장한다.
+- **기록하지 않는 것**: 화면 텍스트, signature, goalText 외의 사용자 입력, 비밀값(`sk-ant-` 등), 라벨 텍스트. `guardRejects`는 이유 코드만 저장하고 알려진 코드(`no_procedure`, `no_steps`, `not_object`, `no_verify`, `no_usedLabels`, `unobserved_label`, `quoted_not_in_usedLabels`, `bad_locator`, `css_locator`, `unobserved_locator`, `unobserved`, `json_parse_error`, `provider_error`)에 접두 매칭하며 매칭되지 않으면 `unknown`으로 저장한다.
 
 ### 1.3 run 상태와 종결 결과
 - **상태**: `in_progress` → `completed`(모든 goal `done`) / `abandoned`(시작 후 중단: 재시작, 패널 무효화, 탭 닫힘, 새 레시피 시작) / `rejected`(시작 자체가 거부됨, `blockedCause` 기록). `crashOrHang`은 관찰자 종결 결과다.
 - **종결 결과 목록(고정)**: `completed`, `abandoned`, `rejected`, `crashOrHang`. 이 밖의 값은 없다.
-- **관찰자 종결 동작**: 체크시트가 `in_progress` run을 `abandoned` 또는 `crashOrHang`으로 종결한다. `sc.evallog.obs.<runId>`의 `finalOutcome`에만 쓰고 run 키를 바꾸지 않는다. 이미 종결 상태인 run에는 거부하고, 종결은 되돌릴 수 없다. **예외:** 패널을 다시 열 때 시스템이 추측으로 닫은 run(`endCause`가 `reconcile`인 `abandoned`)은 관찰자가 한 번 `crashOrHang`/`abandoned`로 덮을 수 있다(멈춘 확장이 재시작 뒤 단순 중단으로 기록되는 것을 막는다).
-- **효과 상태 = `obs.finalOutcome ?? run.status`**. 완전성 규칙의 `in_progress`는 효과 상태 기준이다. 종결 뒤 러너 쪽 이벤트(늦게 돌아온 `resolve()` 등)는 상태를 바꾸지 못하고 보고서에 `postFinalizeEvents` 개수로만 표시된다.
+- **관찰자 종결 동작**: 체크시트가 `in_progress` run을 `abandoned` 또는 `crashOrHang`으로 종결한다. `sc.evallog.obs.<runId>`의 `finalOutcome`에만 쓰고 run 키를 바꾸지 않는다. 이미 종결 상태인 run에는 거부하고, 종결은 되돌릴 수 없다. 관찰자 판정 저장은 화면이 읽은 `revision`보다 저장된 것이 새로우면 `stale`로 거부한다(다른 옵션 탭이 먼저 저장한 안전 항목을 옛 값으로 덮지 않게). **예외:** 패널을 다시 열 때 시스템이 추측으로 닫은 run(`endCause`가 `reconcile`인 `abandoned`)은 관찰자가 한 번 `crashOrHang`/`abandoned`로 덮을 수 있다(멈춘 확장이 재시작 뒤 단순 중단으로 기록되는 것을 막는다).
+- **효과 상태 = `obs.finalOutcome ?? run.status`**. 완전성 규칙의 `in_progress`는 효과 상태 기준이다. 관찰자가 종결한 run에는 러너 쪽 늦은 이벤트(늦게 돌아온 `resolve()` 등)가 기록되지 않고 건강 지표의 `late`로 센다(손실이 아니다). 종결 시각 뒤의 기록된 이벤트는 보고서에 `postFinalizeEvents` 개수로 표시된다.
 - **abandoned 자동 판정**(사이드패널 init): `in_progress` run의 `tabId`가 열린 탭 목록(`chrome.tabs.query`)에 없거나 세션이 없으면 `abandoned`. 판정은 열린 `tabId` 목록을 인자로 받는 순수 함수다.
 - `verified`는 저장하지 않는다. `run`과 `obs`를 `runId`로 조인해 파생한다.
 
 ### 1.4 goal·절차 기록 규칙
-- **skip은 발생 즉시 기록한다**: 수동 진행 호출부(`sidepanel/panel.js`의 `manualAdvance` 직후)에서 `recordSkip(tabId, {stepIdx})`. goal 종료 때 `session.skipped.length`만 읽는 방식은 쓰지 않는다(패널 재오픈 전 skip이 사라진다). `skipped`가 하나라도 있으면 완주가 아니다.
+- **skip은 발생 즉시 기록한다**: 수동 진행 호출부(`sidepanel/panel.js`의 `manualAdvance` 직후)에서 `recordSkip(tabId, {stepIdx})`. goal 종료 때 `session.skipped.length`만 읽는 방식은 쓰지 않는다(패널 재오픈 전 skip이 사라진다). `skipped`가 하나라도 있으면 완주가 아니다. 판정의 레시피 완주는 효과 상태가 `completed`이고, 기록된 goal 수가 `goalCount`와 같으며 모두 `done`이고(`goalCount`가 없는 기록은 완주로 세지 않는다), skip이 없는 run이다.
 - **`procedureKind`**: goal 종료 때 기록. 순수 함수 `classifyProcedure(procedure)`가 `resolve()` 결과 steps의 모양으로 계산한다. 모든 step이 `target.by === "linkText"`이고 verify가 `urlIncludes`면 `nav_only`, 어느 step도 그렇지 않으면 `action`, 섞이면 `mixed`. 정보용(게이트 아님)이다.
 - **러너는 바꾸지 않는다.** 이 단계는 기존 러너를 측정한다. provider 요청 timeout, `goalLabel`·복구 문구·`step.onFail`에 대한 guard 적용, 세션 저장의 탭별 격리, 화면 이동과 목표 달성의 구분은 `TODOS.md`의 B 이전 항목이다.
 
 ### 1.5 판정과 보고 (`scripts/eval-report.js`)
 - 입력은 **마지막 내보내기 하나**다(20회를 한 전용 프로필에 누적).
-- **판정 순서**: (a) 계획 run 명단 대조와 효과 상태 확인, 불완전이면 `INCOMPLETE`(B 진행도 피벗도 내지 않음) → (b) 피벗 조건 → (c) B 진행 조건 1~5 → (d) 그 외(재관찰). 결과표는 하나의 판정만 낸다.
+- **판정 순서**: (a) 계획 run 명단 대조와 효과 상태 확인, 그리고 기록 건강 상태 확인(내보내기에 `health`가 없거나 형식이 틀리거나, 쓰기 실패(`failed`)·부착 못 한 이벤트(`unmatched`)가 1건이라도 있으면 불완전. `late`·`dup`은 손실이 아니다). 불완전이면 `INCOMPLETE`(B 진행도 피벗도 내지 않음) → (b) 피벗 조건 → (c) B 진행 조건 1~5 → (d) 그 외(재관찰). 결과표는 하나의 판정만 낸다.
 - **참가자 단위**: 한 조건으로 세어지려면 그 참가자의 두 회차 코드가 모두 조건을 만족해야 한다. 코드가 없으면 미충족이고 보고에 "코딩된 회차 n/2"를 표시한다.
 - **보고만 하는 것(게이트 아님)**: 각 비율의 95% 신뢰구간(정확 이항)과 nondev 하위 합계, `nav_only` goal과 허위 완주의 겹침, `resolverMs`(p50), goal 단위 완주율 60% 정보 지표.
 - **라운드**: `evalRound`별로 명단 대조와 판정을 따로 하고 풀링하지 않는다. 2차 라운드 판정이 최종이다.
@@ -92,7 +94,7 @@ dev 10회(참가자 ID `dev`, R01~R10 각 1회)와 nondev 10회(P1~P5 × 레시�
 - [ ] 체크시트의 메모·원문 칸에 **키·토큰·비밀번호·URL을 붙여넣지 않는다.** 칸의 스크럽은 휴리스틱이라(접두어가 없는 토큰 등은 통과) 내보내기 파일에 남을 수 있다.
 - [ ] 안내 문구 **다섯 곳**에서 "관측되지 않은 라벨"(그 화면에 실제로 없는 메뉴·버튼·탭 이름)이 나왔는지 각각 확인한다: (a) 단계 안내 문장 `instruct`, (b) 제목 `goalLabel`, (c) 복구 문구, (d) 신뢰 배지, (e) 단계 힌트 `step.onFail`(한 번 실패한 뒤 표시됨). guard는 (a)의 일부만 검사하므로 (b)~(e)는 관찰자만 잡을 수 있다. 나왔으면 어느 곳인지 체크시트에 적는다.
 - [ ] 응답이 오지 않거나 확장이 멈추면 **탭을 닫거나 다시 시작하기 전에 먼저** 체크시트에서 run을 **`crashOrHang`으로 종결**한다. (탭을 닫거나 다시 시작하면 run이 `cleared`/`replaced`로 닫혀 되돌릴 수 없고, 멈춤이 단순 중단으로 기록된다. 패널을 다시 열어 `reconcile`로 닫힌 경우만 한 번 덮어쓸 수 있다.) (러너 timeout은 이 단계에서 넣지 않았다. 무한 대기는 게이트 4가 재는 대상이다.)
-- [ ] `recipe-done`에서 참가자의 "실제로 됐나요? 예/아니오" 답을 기록한다(앱이 `userConfirmedReal`로 저장).
+- [ ] `recipe-done`에서 참가자의 "실제로 됐나요? 예/아니오" 답을 기록한다(앱이 `userConfirmedReal`로 저장하며 더블클릭·재열기에는 첫 답만 남긴다).
 - [ ] **관찰자가 `manualCheck`를 직접 확인**한다(아래 표). 결과를 체크시트의 `observerVerified`로 기록한다. 참가자 답과 다르면 불일치로 따로 센다.
 
 | ID | `manualCheck` |

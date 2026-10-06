@@ -32,7 +32,7 @@
 
 **Why:** 이번 A 단계의 panel.js 변경(recipe-done 질문 저장, 엔진 이벤트 훅 등록, 건너뛴 단계 수 기록, resolve 호출 계측)은 자동 테스트가 없다. 특히 `handleGuidanceDone`에서 `clearSession(tabId)` 전에 `session.skipped`를 읽는 호출 순서가 어긋나면 수동으로 넘긴 goal이 완주로 침묵 집계된다(Failure modes의 CRITICAL GAP).
 
-**Context:** /plan-eng-review D8에서 TODOS.md에 기록하기로 결정(2026-10-02). 대안이던 "이번 PR에 수동 스모크 체크리스트 포함"(C)은 선택되지 않았다. 따라서 **관찰 시작 전 panel.js 변경에는 자동·수동 검증이 모두 없다**(미해결 항목으로 보고서에 남김). 시작점: `package.json`은 `node --test test/*.test.js`뿐이고 DOM 환경이 없다. `test/recipe-session.test.js:9-23` 등의 chrome 목은 T5(D6)의 공통 헬퍼로 합쳐진다.
+**Context:** (2026-10-06 갱신) T3·T6 구현 뒤 실제 Chromium(MV3 확장 로드, Playwright)으로 recipe-done 질문·이벤트 기록·체크시트 흐름을 한 번 확인했지만 그 프로브는 저장소에 없다. `options/checksheet.js`(DOM)도 같은 이유로 자동 테스트가 없다. /plan-eng-review D8에서 TODOS.md에 기록하기로 결정(2026-10-02). 대안이던 "이번 PR에 수동 스모크 체크리스트 포함"(C)은 선택되지 않았다. 따라서 **관찰 시작 전 panel.js 변경에는 자동·수동 검증이 모두 없다**(미해결 항목으로 보고서에 남김). 시작점: `package.json`은 `node --test test/*.test.js`뿐이고 DOM 환경이 없다. `test/recipe-session.test.js:9-23` 등의 chrome 목은 T5(D6)의 공통 헬퍼로 합쳐진다.
 
 **Effort:** M (human: ~1일 / CC: ~1시간)
 **Priority:** P2
@@ -61,3 +61,15 @@
 **Effort:** L (human: ~2일 / CC: ~2시간)
 **Priority:** P2
 **Depends on:** A 통과
+
+### 관찰 재시도와 평가 로그 견고화(관찰 시작 전·후 보완)
+
+**What:** (1) 같은 참가자·레시피 슬롯의 재시도를 `eval-report`가 어떻게 다룰지 정한다(지금은 중복 기록이면 `INCOMPLETE`이고 풀 방법이 새 `evalRound` 또는 전체 삭제뿐). 예: 슬롯의 앞선 `cleared`/`replaced` run을 제외하거나 관찰자 "제외" 표시. (2) 완주율 조건 1이 "기록된 완주"를 세므로 허위 완주 1건이 허용되는 최악의 경우 실제 7/16이어도 통과할 수 있는데, 조건 1을 "관찰자 확인된 완주"로 볼지 정한다. (3) `late` 카운트를 "관찰자 종결 뒤"와 "시스템이 먼저 종결한 뒤"로 나눠 후자를 손실로 센다. (4) `clearAll`이 사이드패널 쪽 메모리 카운트·진행 중 세션과 어긋나지 않게 epoch 키를 둔다. (5) 옵션 페이지의 비동기 새로고침이 읽는 동안 수정된 폼을 지우는 경합과, 두 옵션 탭에서 실패 카운트가 내보내기 스냅샷에 안 들어가는 경합을 막는다. (6) 멈춘 run을 탭을 닫은 뒤에도 `crashOrHang`으로 덮을 수 있게 할지(지금은 `reconcile`로 닫힌 경우만 가능) 정한다.
+
+**Why:** 이 항목들은 모두 `/review`·`/ship`의 적대적·Red Team 리뷰가 낸 INFORMATIONAL 발견이고, 판정이 틀리거나 20회 관찰이 무효가 되는 방향으로만 실패한다(fail-closed 쪽이 대부분). (1)·(2)·(6)은 승인된 결정 규칙(R8, R9, R13, 제약 10)을 바꾸므로 사용자 결정이 필요해 코드로 고치지 않았다.
+
+**Context:** `scripts/eval-report.js`(`matchPlan`, 조건 1, `lossCounts`), `lib/evallog.js`(`handleEvent`의 late 분기, `finalizeRun`의 reconcile 예외, `clearAll`, `exportAll`), `options/checksheet.js`(`refresh`). 리뷰 기록은 `gstack-review-read`의 2026-10-06 항목. 관찰 중에는 코드를 고치지 않는다는 규칙(`docs/observation-checklist.md` 2.1)이 있어, (1)은 **관찰 시작 전에** 정하는 편이 좋다.
+
+**Effort:** M (human: ~1일 / CC: ~1시간)
+**Priority:** P1
+**Depends on:** 관찰 시작 전 사용자 결정
