@@ -72,6 +72,7 @@ els.config.addEventListener("submit", async (e) => {
   const reasons = {
     invalid_tester: "참가자 구분이 올바르지 않습니다.",
     invalid_participant: "참가자 ID는 dev 또는 P1~P99 형식이어야 합니다.",
+    tester_mismatch: "dev 는 참가자 ID dev, nondev 는 P1~P99 와만 짝지을 수 있습니다.",
     invalid_round: "evalRound는 1 이상의 정수여야 합니다.",
     write_failed: "저장하지 못했습니다.",
   };
@@ -90,11 +91,15 @@ function finalizeButtons(row, onDone) {
   for (const [outcome, label] of [["abandoned", "중단(abandoned)으로 종결"], ["crashOrHang", "멈춤·오류(crashOrHang)로 종결"]]) {
     wrap.append(el("button", {
       type: "button", class: "btn-ghost", text: label,
-      onclick: async () => {
+      onclick: async (e) => {
         if (!confirm(`이 run을 "${STATUS_LABEL[outcome]}"로 종결합니다. 되돌릴 수 없습니다.`)) return;
-        const res = await finalizeRun(row.runId, outcome);
-        if (!res.ok) alert(`종결하지 못했습니다: ${res.reason}`);
-        onDone();
+        for (const b of wrap.querySelectorAll("button")) b.disabled = true; // 이중 클릭 방지
+        try {
+          const res = await finalizeRun(row.runId, outcome);
+          if (!res.ok) alert(`종결하지 못했습니다: ${res.reason}`);
+        } finally {
+          onDone();
+        }
       },
     }));
   }
@@ -103,8 +108,8 @@ function finalizeButtons(row, onDone) {
 
 // 내 저장이 일으킨 storage 변경은 목록을 다시 그리지 않는다(열려 있는 폼과 메시지 유지).
 let selfWriting = false;
-// 입력 중(수정했지만 아직 저장 전)이면 포커스가 밖으로 나가도 목록을 다시 그리지 않는다.
-let dirty = false;
+// 입력 중(수정했지만 아직 저장 전)인 폼이 하나라도 있으면 포커스가 밖으로 나가도 목록을 다시 그리지 않는다.
+const anyDirty = () => Boolean(els.runs.querySelector("form[data-dirty]"));
 
 function observationForm(row, onSaved) {
   const o = row.obs ?? {};
@@ -152,7 +157,11 @@ function observationForm(row, onSaved) {
   form.append(field("참가자 관계(가족/친구/동료)", relationship), field("메모(P번호만, 이름 금지)", notes));
   const submitBtn = el("button", { type: "submit", class: "btn-primary", text: "판정 저장" });
   form.append(el("div", { class: "form-actions" }, submitBtn, status));
-  form.addEventListener("input", () => { dirty = true; });
+  form.addEventListener("input", () => {
+    form.dataset.dirty = "1";
+    status.textContent = ""; // 이전 저장 메시지가 새 수정까지 저장된 것처럼 보이지 않게
+  });
+  let loadedRevision = o.revision ?? 0; // 이 화면이 읽은 판정의 수정 번호
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -173,12 +182,19 @@ function observationForm(row, onSaved) {
       ...Object.fromEntries(Object.keys(SAFETY_LABEL).map((k) => [k, triParse(safetySelects[k].value)])),
       relationship: relationship.value,
       notes: notes.value,
-    });
+    }, { expectedRevision: loadedRevision });
     } finally {
       selfWriting = false;
       submitBtn.disabled = false;
     }
-    if (res.ok) dirty = false;
+    if (res.ok) {
+      delete form.dataset.dirty;
+      loadedRevision = res.obs.revision;
+    }
+    if (res.reason === "stale") {
+      status.textContent = "다른 화면에서 먼저 저장됐습니다. 새로고침한 뒤 다시 입력하세요(안전 항목을 옛 값으로 덮지 않으려고 막았습니다).";
+      return;
+    }
     status.textContent = res.ok ? `저장했습니다(수정 ${res.obs.revision}회차).` : `저장하지 못했습니다: ${res.reason}${res.field ? ` (${res.field})` : ""}`;
     if (res.ok) onSaved(res.obs);
   });
@@ -243,7 +259,6 @@ async function renderHealth() {
 
 async function refresh() {
   els.stale.hidden = true;
-  dirty = false;
   const rows = await listRuns();
   els.empty.hidden = rows.length !== 0;
   els.runs.replaceChildren();
@@ -255,7 +270,13 @@ async function refresh() {
 // ─── 내보내기·삭제 ───────────────────────────────────────────────────────────
 
 els.exportBtn.addEventListener("click", async () => {
-  const data = await exportAll();
+  let data;
+  try {
+    data = await exportAll();
+  } catch (err) {
+    els.exportStatus.textContent = `내보내지 못했습니다: ${err?.message ?? err}`;
+    return;
+  }
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -271,18 +292,26 @@ els.exportBtn.addEventListener("click", async () => {
 els.clearBtn.addEventListener("click", async () => {
   const typed = prompt("모든 평가 기록(sc.evallog.*)을 삭제합니다. 최종 보고서를 확인한 뒤에만 한 번 하세요. 계속하려면 '삭제'를 입력하세요.");
   if (typed !== "삭제") return;
-  const res = await clearAll();
+  let res;
+  try {
+    res = await clearAll();
+  } catch (err) {
+    res = { ok: false };
+  }
   els.exportStatus.textContent = res.ok ? `삭제했습니다(키 ${res.removed}개). 참가자 설정도 초기화됐으니 다시 입력하세요. 공급자 설정은 그대로입니다.` : "삭제하지 못했습니다.";
   await loadConfig();
   await refresh();
 });
 
-els.refresh.addEventListener("click", refresh);
+els.refresh.addEventListener("click", () => {
+  if (anyDirty() && !confirm("저장하지 않은 입력이 있습니다. 새로고침하면 사라집니다. 계속할까요?")) return;
+  refresh();
+});
 
 // 입력 중에는 목록을 다시 그리지 않는다(작성 중인 폼이 사라지지 않게).
 chrome.storage.onChanged.addListener((changes, area) => {
   if (selfWriting || area !== "local" || !Object.keys(changes).some((k) => k.startsWith("sc.evallog."))) return;
-  if (dirty || els.runs.contains(document.activeElement)) els.stale.hidden = false;
+  if (anyDirty() || els.runs.contains(document.activeElement)) els.stale.hidden = false;
   else refresh();
 });
 

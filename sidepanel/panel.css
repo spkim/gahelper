@@ -379,3 +379,5 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+.card-actions-wrap { flex-wrap: wrap; }

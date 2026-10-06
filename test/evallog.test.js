@@ -224,6 +224,86 @@ describe("reconcile 로 닫힌 run 의 관찰자 종결 (D2)", () => {
   });
 });
 
+describe("2차 리뷰 보강", () => {
+  const idOf = () => runKeys()[0].slice("sc.evallog.run.".length);
+
+  it("관찰자가 종결한 run 에는 러너의 늦은 기록이 들어오지 않는다", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    const id = idOf();
+    await E.finalizeRun(id, "crashOrHang");
+    const before = JSON.stringify(readRun());
+    await E.recordSkip(1);
+    await E.recordResolve(1, { resolverMs: 9, attempts: [{ reasons: ["x"] }] });
+    await E.onRecipeEvent(evt("goal_done", 1, { status: "done" }));
+    assert.equal(JSON.stringify(readRun()), before);
+    assert.equal((await E.getHealth()).run.late, 3);
+  });
+
+  it("매핑이 이미 없는 session_cleared 는 손실(unmatched)이 아니라 late 다", async () => {
+    await E.onRecipeEvent(created());
+    await E.markAbandoned([]); // 탭 없음: 매핑 정리
+    await E.onRecipeEvent(evt("session_cleared", 1, { status: "running" }));
+    const h = (await E.getHealth()).run;
+    assert.equal(h.unmatched ?? 0, 0);
+    assert.equal(h.late, 1);
+  });
+
+  it("종결된 run 의 session_cleared 는 매핑만 지우고 이벤트를 덧붙이지 않는다", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    await E.onRecipeEvent(evt("goal_done", 1, { status: "done" }));
+    const n = readRun().events.length;
+    await E.onRecipeEvent(evt("session_cleared", 1, { status: "done" }));
+    assert.equal(readRun().events.length, n);
+    assert.equal(readRun().endCause, "done");
+    assert.deepEqual(mock.session.dump()["sc.evallog.active"], {});
+  });
+
+  it("saveObservation: 읽은 뒤 다른 곳에서 먼저 저장됐으면 stale 로 거부한다", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    await E.onRecipeEvent(evt("goal_done", 1, { status: "done" }));
+    const id = idOf();
+    assert.equal((await E.saveObservation(id, { secretSentToLlm: true }, { expectedRevision: 0 })).ok, true);
+    const stale = await E.saveObservation(id, { secretSentToLlm: false }, { expectedRevision: 0 });
+    assert.equal(stale.reason, "stale");
+    assert.equal(stale.revision, 1);
+    assert.equal(mock.local.dump()[`sc.evallog.obs.${id}`].secretSentToLlm, true, "안전 위반 기록이 덮이지 않는다");
+    assert.equal((await E.saveObservation(id, { q1: 1 }, { expectedRevision: 1 })).ok, true);
+    assert.equal((await E.saveObservation(id, { q1: 2 })).ok, true, "expectedRevision 없으면 기존 동작");
+  });
+
+  it("setConfig: 문자열이 아닌 참가자 ID 와 tester 짝 불일치를 거부한다", async () => {
+    assert.equal((await E.setConfig({ participantId: ["P1"] })).reason, "invalid_participant");
+    assert.equal((await E.setConfig({ tester: "nondev", participantId: "dev" })).reason, "tester_mismatch");
+    assert.equal((await E.setConfig({ tester: "dev", participantId: "P1" })).reason, "tester_mismatch");
+    assert.equal((await E.setConfig({ tester: "dev", participantId: "dev" })).ok, true);
+  });
+
+  it("blockedCauseFor 는 err.code 를 우선한다", () => {
+    assert.equal(E.blockedCauseFor({ code: "guard_fail", message: "다른 문구" }), "guard_fail");
+  });
+
+  it("recordConfirm 은 완료된 run 에서도 저장된다", async () => {
+    await E.onRecipeEvent(created(1, { goalCount: 1 }));
+    await E.onRecipeEvent(evt("goal_done", 1, { status: "done" }));
+    assert.deepEqual(await E.recordConfirm(1, true), { ok: true });
+    assert.equal(readRun().userConfirmedReal, true);
+  });
+
+  it("recordResolve: 알 수 없는 blockedCause 는 unknown", async () => {
+    await E.onRecipeEvent(created());
+    await E.recordResolve(1, { blockedCause: "bogus" });
+    assert.equal(readRun().goals[0].blockedCause, "unknown");
+  });
+
+  it("finalizeRun: endCause 별로 종결 가능 여부를 가른다", async () => {
+    for (const [cause, status, ok] of [["reconcile", "abandoned", true], ["replaced", "abandoned", false], ["cleared", "abandoned", false], ["done_on_clear", "completed", false]]) {
+      mock.reset();
+      mock.local.seed({ "sc.evallog.run.x": { runId: "x", status, endCause: cause, goals: [], events: [], tabId: 1 } });
+      assert.equal((await E.finalizeRun("x", "crashOrHang")).ok, ok, cause);
+    }
+  });
+});
+
 describe("recording", () => {
   it("recordResolve stores codes only, never label text or secrets", async () => {
     await E.onRecipeEvent(created());

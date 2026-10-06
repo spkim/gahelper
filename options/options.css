@@ -349,3 +349,5 @@ button:focus-visible {
 .cs-section [hidden] { display: none !important; }
 .cs-body textarea:focus { outline: none; border-color: var(--azure); box-shadow: 0 0 0 3px color-mix(in srgb, var(--azure) 22%, transparent); }
 .cs-run summary:focus-visible { outline: 2px solid var(--azure); outline-offset: 2px; }
+.cs-run summary::before { content: "▸"; color: var(--muted); }
+.cs-run[open] summary::before { content: "▾"; }

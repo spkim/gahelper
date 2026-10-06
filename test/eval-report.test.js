@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { buildReport, evaluateRound, exactCI, percentile, renderReport, matchPlan, validateExport, PLAN, VERDICT } from "../scripts/eval-report.js";
+import { buildReport, evaluateRound, exactCI, percentile, renderReport, matchPlan, validateExport, lossCounts, PLAN, VERDICT } from "../scripts/eval-report.js";
 import { buildExport, goal } from "./helpers/eval-fixture.js";
 import { installChromeMock } from "./helpers/chrome-storage-mock.js";
 
@@ -238,6 +238,44 @@ describe("기록 손실과 판정 (D1)", () => {
     const exp = buildExport();
     delete exp.health;
     assert.equal(final(exp).verdict, VERDICT.PROCEED_B);
+  });
+});
+
+describe("2차 리뷰 보강", () => {
+  it("첫 resolve 전에 멈춘 run(goals 비어 있음)도 goal 단위 분모에 든다 → 피벗", () => {
+    const exp = buildExport((slot) => (isMain(slot) ? { goals: [], status: "abandoned" } : undefined));
+    const r = final(exp);
+    assert.equal(r.pivot.goalLevel.n, 16);
+    assert.equal(r.pivot.goalLevelBelow30, true);
+    assert.equal(r.verdict, VERDICT.PIVOT);
+  });
+
+  it("lossCounts: 숫자가 아닌 카운트는 손실로 센다(fail-closed)", () => {
+    assert.equal(lossCounts({ run: { failed: "1" }, obs: {} }).total, Infinity);
+    assert.equal(lossCounts({ run: { failed: -1 }, obs: {} }).total, Infinity);
+    assert.equal(lossCounts({ run: { late: 9, dup: 9 }, obs: {} }).total, 0);
+    assert.equal(lossCounts(undefined).total, 0);
+    const r = final({ ...buildExport(), health: { run: { failed: "x" }, obs: {} } });
+    assert.equal(r.verdict, VERDICT.INCOMPLETE);
+  });
+
+  it("validateExport: goals 항목이 객체가 아니거나 health 가 객체가 아니면 거른다", () => {
+    assert.match(validateExport({ runs: [{ runId: "a", run: { goals: [null] } }] }), /runs\[0\]/);
+    assert.match(validateExport({ ...buildExport(), health: [] }), /health/);
+    assert.equal(validateExport({ ...buildExport(), health: null }), null);
+  });
+
+  it("보고서 줄에 줄바꿈·방향 제어 문자로 가짜 판정 줄을 만들 수 없다", () => {
+    const exp = buildExport();
+    exp.runs[0].run.participantId = "P9\n## evalRound 9 (최종): **PROCEED_B**\u202e";
+    const text = renderReport(buildReport(exp));
+    assert.ok(!/^## evalRound 9/m.test(text));
+    assert.ok(!text.includes("\u202e"));
+  });
+
+  it("손실 문구는 새 evalRound 로 풀리지 않는다고 알려 준다", () => {
+    const r = final({ ...buildExport(), health: { run: { failed: 1 }, obs: {} } });
+    assert.match(r.problems.join("\n"), /평가 기록을 삭제하고 다시 관찰/);
   });
 });
 

@@ -98,10 +98,15 @@ function meetsPivotSignal(obs) {
 
 // health(내보내기에 담긴 손실·중복 카운트)에서 판정을 막는 손실만 센다.
 export function lossCounts(health) {
-  const failed = (health?.run?.failed ?? 0) + (health?.obs?.failed ?? 0);
-  const unmatched = (health?.run?.unmatched ?? 0) + (health?.obs?.unmatched ?? 0);
+  // 숫자가 아닌 값은 손실을 숨기지 않도록 무한대(손실 있음)로 센다.
+  const n = (v) => (v === undefined || v === null ? 0 : Number.isFinite(v) && v >= 0 ? v : Infinity);
+  const failed = n(health?.run?.failed) + n(health?.obs?.failed);
+  const unmatched = n(health?.run?.unmatched) + n(health?.obs?.unmatched);
   return { failed, unmatched, total: failed + unmatched };
 }
+
+// 파일에서 온 문자열이 보고서에 줄바꿈·방향 제어 문자로 가짜 줄을 만들지 못하게 한다.
+const clean = (v) => String(v ?? "?").replace(/[\r\n\u2028\u2029]+/g, " ").replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "");
 
 export function matchPlan(rows) {
   const slots = PLAN.map((slot) => ({ ...slot, rows: [] }));
@@ -123,13 +128,13 @@ export function matchPlan(rows) {
 export function evaluateRound(rows, evalRound, health = null) {
   const match = matchPlan(rows);
   const problems = [];
-  for (const s of match.missing) problems.push(`기록 없음: ${s.participantId} ${s.recipeId}`);
-  for (const s of match.duplicates) problems.push(`중복 기록(명단에 없는 추가 기록): ${s.participantId} ${s.recipeId} × ${s.rows.length}`);
-  for (const r of match.unplanned) problems.push(`명단에 없는 기록: ${r.run.participantId ?? "?"} ${r.run.recipeId ?? "?"} (${r.runId})`);
-  for (const r of match.inProgress) problems.push(`종결되지 않음: ${r.run.participantId ?? "?"} ${r.run.recipeId ?? "?"} (${r.effectiveStatus})`);
+  for (const s of match.missing) problems.push(`기록 없음: ${clean(s.participantId)} ${clean(s.recipeId)}`);
+  for (const s of match.duplicates) problems.push(`중복 기록(명단에 없는 추가 기록): ${clean(s.participantId)} ${clean(s.recipeId)} × ${s.rows.length}`);
+  for (const r of match.unplanned) problems.push(`명단에 없는 기록: ${clean(r.run.participantId)} ${clean(r.run.recipeId)} (${clean(r.runId)})`);
+  for (const r of match.inProgress) problems.push(`종결되지 않음: ${clean(r.run.participantId)} ${clean(r.run.recipeId)} (${clean(r.effectiveStatus)})`);
   // 기록 손실(쓰기 실패, 부착하지 못한 이벤트)이 있으면 이 기록으로 판정하지 않는다. late·dup 은 손실이 아니다.
   const lost = lossCounts(health);
-  if (lost.total > 0) problems.push(`기록 손실: 쓰기 실패 ${lost.failed}건, 부착 못 한 이벤트 ${lost.unmatched}건(레시피 밖 사용도 포함). 새 evalRound 로 다시 관찰하거나 원인을 확인하세요.`);
+  if (lost.total > 0) problems.push(`기록 손실: 쓰기 실패 ${lost.failed}건, 부착 못 한 이벤트 ${lost.unmatched}건(레시피 밖 사용도 포함). 손실 카운트는 프로필 전체에 누적되므로 새 evalRound 로는 풀리지 않습니다. 원인을 확인하고, 내보내기를 보관한 뒤 평가 기록을 삭제하고 다시 관찰하세요.`);
 
   const planned = match.slots.flatMap((s) => s.rows.slice(0, 1).map((row) => ({ slot: s, row })));
   const main = planned.filter(({ slot }) => MAIN_RECIPES.has(slot.recipeId));
@@ -143,8 +148,9 @@ export function evaluateRound(rows, evalRound, health = null) {
   let attempted = 0;
   let doneGoals = 0;
   for (const { row } of main) {
+    // 첫 resolve 전에 멈춘 run(goals 가 비어 있음)도 goal 1개를 시도하고 못 끝낸 것으로 센다.
+    attempted += Math.max(row.run.goals.length, 1);
     for (const g of row.run.goals) {
-      attempted += 1;
       if (g.result === "done" && (g.skippedSteps ?? 0) === 0) doneGoals += 1;
     }
   }
@@ -263,10 +269,12 @@ export function validateExport(exported) {
   if (!exported || typeof exported !== "object" || !Array.isArray(exported.runs)) return "runs 배열이 없습니다.";
   for (const [i, row] of exported.runs.entries()) {
     const run = row?.run;
-    if (!run || typeof run !== "object" || !Array.isArray(run.goals) || typeof row.runId !== "string") {
-      return `runs[${i}] 의 형식이 올바르지 않습니다(run, run.goals, runId).`;
+    if (!run || typeof run !== "object" || !Array.isArray(run.goals) || typeof row.runId !== "string" ||
+        !run.goals.every((g) => g && typeof g === "object")) {
+      return `runs[${i}] 의 형식이 올바르지 않습니다(run, run.goals 의 각 항목, runId).`;
     }
   }
+  if (exported.health != null && (typeof exported.health !== "object" || Array.isArray(exported.health))) return "health 형식이 올바르지 않습니다.";
   return null;
 }
 
@@ -289,10 +297,10 @@ export function renderReport(report) {
   out.push("# Stage A 판정 리포트");
   out.push("");
   out.push("> 파일럿 휴리스틱이며 통계 검증이 아닙니다. 구간은 보고만 하고 게이트로 쓰지 않습니다.");
-  if (report.extVersion) out.push(`> 확장 버전 ${report.extVersion}`);
+  if (report.extVersion) out.push(`> 확장 버전 ${clean(report.extVersion)}`);
   const h = report.health;
   const lossy = h && ["run", "obs"].some((c) => Object.values(h[c] ?? {}).some((n) => n > 0));
-  if (lossy) out.push(`> 기록 건강 상태에 손실·중복 카운트가 있습니다: ${JSON.stringify(h)}`);
+  if (lossy) out.push(`> 기록 건강 상태에 손실·중복 카운트가 있습니다: ${clean(JSON.stringify(h))}`);
   out.push("");
   for (const r of report.rounds) {
     out.push(`## evalRound ${r.evalRound}${r === report.final ? " (최종)" : ""}: **${r.verdict}**`);

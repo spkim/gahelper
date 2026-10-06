@@ -377,7 +377,7 @@ function renderBlocked(node) {
       const s = getSession(tabId);
       if (!s) return;
       resumeFromBlocked(s);
-      recordSkip(tabId, { stepIdx: s.stepIdx }); // 발생 즉시 기록(패널을 닫아도 남는다)
+      if (getRecipeSession(tabId)) recordSkip(tabId, { stepIdx: s.stepIdx }); // 발생 즉시 기록(패널을 닫아도 남는다). 레시피 밖 사용은 기록 대상이 아니다.
       manualAdvance(s);
       render(true);
       ensurePolling();
@@ -535,13 +535,18 @@ async function ensureOriginGranted(url) {
   return requestOriginPermission(url);
 }
 
+// 평가 로그는 레시피 세션만 기록한다. 자유 입력 흐름은 run 이 없어 부착 실패(unmatched)로 세어지므로 아예 보내지 않는다.
+function recordResolveIfRecipe(tabId, info) {
+  if (getRecipeSession(tabId)) recordResolve(tabId, info);
+}
+
 async function resolveProcedure(session, provider, goalText) {
   let sigRes;
   try {
     sigRes = await captureSignature(session.tabId);
   } catch (err) {
     console.warn("[setup-copilot] captureSignature 실패", err?.message);
-    recordResolve(session.tabId, { blockedCause: "capture_failed" });
+    recordResolveIfRecipe(session.tabId, { blockedCause: "capture_failed" });
     session.status = "blocked";
     session.recoverText = "화면 구조를 읽지 못했습니다. 페이지가 완전히 로드됐는지 확인하세요.";
     return false;
@@ -559,7 +564,7 @@ async function resolveProcedure(session, provider, goalText) {
     resolveResult = await resolve(provider, goalText, sig);
   } catch (err) {
     console.warn("[setup-copilot] resolve 실패", err?.message, err?.reasons);
-    recordResolve(session.tabId, {
+    recordResolveIfRecipe(session.tabId, {
       resolverMs: Date.now() - resolveStart,
       attempts: err?.attempts ?? [],
       blockedCause: blockedCauseFor(err),
@@ -569,7 +574,7 @@ async function resolveProcedure(session, provider, goalText) {
     return false;
   }
 
-  recordResolve(session.tabId, {
+  recordResolveIfRecipe(session.tabId, {
     resolverMs: Date.now() - resolveStart,
     attempts: resolveResult.attempts,
     procedure: resolveResult.procedure,
