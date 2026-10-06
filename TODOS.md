@@ -62,14 +62,14 @@
 **Priority:** P2
 **Depends on:** A 통과
 
-### 관찰 재시도와 평가 로그 견고화(관찰 시작 전·후 보완)
+### 관찰 재시도와 평가 로그 견고화(남은 항목 3~5: 관찰 후로 미룸)
 
 **What:** (해결됨 2026-10-06: 같은 슬롯 재시도는 마지막 시도를 세고 앞선 중단은 재시도로 보고, 멈춤은 계속 반영. `scripts/eval-report.js` `matchPlan`, 관찰 체크리스트 1.5.) 남은 항목: (3) `late` 카운트를 "관찰자 종결 뒤"와 "시스템이 먼저 종결한 뒤"로 나눠 후자를 손실로 센다. (4) `clearAll`이 사이드패널 쪽 메모리 카운트·진행 중 세션과 어긋나지 않게 epoch 키를 둔다. (5) 옵션 페이지의 비동기 새로고침이 읽는 동안 수정된 폼을 지우는 경합과, 두 옵션 탭에서 실패 카운트가 내보내기 스냅샷에 안 들어가는 경합을 막는다. (해결됨 2026-10-06, 사용자 결정: (2) 조건 1은 관찰자 확인 완주만 센다. (6) 탭을 닫은 뒤에도 시스템이 닫은 abandoned run을 관찰자가 한 번 `crashOrHang`으로 덮을 수 있다.)
 
 **Why:** 이 항목들은 모두 `/review`·`/ship`의 적대적·Red Team 리뷰가 낸 INFORMATIONAL 발견이고, 판정이 틀리거나 20회 관찰이 무효가 되는 방향으로만 실패한다(fail-closed 쪽이 대부분). (2)·(6)은 승인된 결정 규칙을 바꾸는 항목이라 사용자 결정을 받아 반영했다.
 
-**Context:** `scripts/eval-report.js`(`matchPlan`, 조건 1, `lossCounts`), `lib/evallog.js`(`handleEvent`의 late 분기, `finalizeRun`의 reconcile 예외, `clearAll`, `exportAll`), `options/checksheet.js`(`refresh`). 리뷰 기록은 `gstack-review-read`의 2026-10-06 항목. 관찰 중에는 코드를 고치지 않는다는 규칙(`docs/observation-checklist.md` 2.1)이 있어 남은 항목은 **관찰 시작 전에** 정하는 편이 좋다.
+**Context:** `scripts/eval-report.js`(`matchPlan`, 조건 1, `lossCounts`), `lib/evallog.js`(`handleEvent`의 late 분기, `finalizeRun`의 reconcile 예외, `clearAll`, `exportAll`), `options/checksheet.js`(`refresh`). 리뷰 기록은 `gstack-review-read`의 2026-10-06 항목. 관찰 중에는 코드를 고치지 않는다는 규칙(`docs/observation-checklist.md` 2.1)이 있다. 사용자 결정(2026-10-06)으로 남은 항목 3~5는 **관찰 후로 미뤘다.** 관찰 결과에서 `late`·`unmatched` 카운트나 `clearAll`·새로고침 경합 징후가 나오면 그때 고친다. 미루는 동안 해당 증상은 판정을 INCOMPLETE 쪽으로만 기울인다(fail-closed).
 
 **Effort:** M (human: ~1일 / CC: ~1시간)
-**Priority:** P1
-**Depends on:** 관찰 시작 전 사용자 결정
+**Priority:** P2
+**Depends on:** Stage A 관찰 완료
