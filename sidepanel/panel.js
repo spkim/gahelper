@@ -19,8 +19,9 @@ import { getRecipe, listRecipes } from "../lib/recipe-store.js";
 import {
   createRecipeSession, getRecipeSession, clearRecipeSession,
   currentGoal, markGoalDone, restoreRecipeSessions,
-  pauseForPopup, resumeFromPopup, getSessionForPopup,
+  pauseForPopup, resumeFromPopup, getSessionForPopup, setRecipeEventListener,
 } from "../lib/recipe-engine.js";
+import { onRecipeEvent, recordResolve, recordSkip, recordConfirm, markAbandoned, blockedCauseFor } from "../lib/evallog.js";
 
 // ─── 상수 / 전역 ─────────────────────────────────────────────────────────────
 
@@ -49,6 +50,8 @@ let renderedKey = null;
 let pollTimer = null;
 let ticking = false;
 let recentGoals = [];
+
+const confirmedTabs = new Set(); // recipe-done 질문에 저장까지 끝낸 탭(UI 표시용, 기록은 evallog)
 
 // session 없는 상태에서의 UI 모드.
 let uiMode = "prompt"; // "prompt" | "recipe-pick" | "resolving" | "refuse"
@@ -374,6 +377,7 @@ function renderBlocked(node) {
       const s = getSession(tabId);
       if (!s) return;
       resumeFromBlocked(s);
+      if (getRecipeSession(tabId)) recordSkip(tabId, { stepIdx: s.stepIdx }); // 발생 즉시 기록(패널을 닫아도 남는다). 레시피 밖 사용은 기록 대상이 아니다.
       manualAdvance(s);
       render(true);
       ensurePolling();
@@ -404,8 +408,26 @@ function renderRecipeDone(node) {
   const recipeSession = tabId ? getRecipeSession(tabId) : null;
   const recipe = recipeSession ? getRecipe(recipeSession.recipeId) : null;
   node.querySelector('[data-slot="goal-label"]').textContent = recipe?.name ?? "";
+
+  // "실제로 됐나요?" — 첫 답만 evallog 가 남긴다. 답한 뒤에는 버튼을 숨기고 감사 문구를 보인다.
+  const askEl = node.querySelector('[data-slot="confirm-ask"]');
+  const thanksEl = node.querySelector('[data-slot="confirm-thanks"]');
+  if (tabId && confirmedTabs.has(tabId)) {
+    askEl.classList.add("hidden");
+    thanksEl.classList.remove("hidden");
+  }
+  for (const btn of node.querySelectorAll("[data-confirm]")) {
+    btn.addEventListener("click", async () => {
+      if (!tabId) return;
+      for (const b of node.querySelectorAll("[data-confirm]")) b.disabled = true; // 더블클릭 방지
+      const res = await recordConfirm(tabId, btn.dataset.confirm === "yes");
+      if (res?.ok) confirmedTabs.add(tabId); // 저장하지 못했으면 감사 문구 대신 다시 물을 수 있게 둔다
+      render(true);
+    });
+  }
+
   node.querySelector('[data-action="restart"]').addEventListener("click", async () => {
-    if (tabId) { clearSession(tabId); await clearRecipeSession(tabId); }
+    if (tabId) { clearSession(tabId); await clearRecipeSession(tabId); confirmedTabs.delete(tabId); }
     uiMode = "prompt";
     render(true);
   });
@@ -465,15 +487,22 @@ async function grantCurrentTabPermission() {
   try { return await requestOriginPermission(url); } catch { return false; }
 }
 
+let startingRecipe = false; // clear→create 사이에 겹친 시작 클릭이 같은 레시피로 run 을 둘 만들지 않게 한다(resolve 대기 중에는 걸지 않는다)
+
 async function startRecipeFlow(recipeId, hint = {}) {
   const tabId = currentTab?.id;
-  if (!tabId) return;
+  if (!tabId || startingRecipe) return;
 
   // generic-setup 은 RecipeSession 없이 자연어 입력 경로 사용.
   if (recipeId === "generic-setup") return;
 
-  await clearRecipeSession(tabId);
-  await createRecipeSession(tabId, recipeId);
+  startingRecipe = true;
+  try {
+    await clearRecipeSession(tabId);
+    await createRecipeSession(tabId, recipeId);
+  } finally {
+    startingRecipe = false;
+  }
   const goal = currentGoal(tabId);
   if (!goal) return;
 
@@ -513,12 +542,18 @@ async function ensureOriginGranted(url) {
   return requestOriginPermission(url);
 }
 
+// 평가 로그는 레시피 세션만 기록한다. 자유 입력 흐름은 run 이 없어 부착 실패(unmatched)로 세어지므로 아예 보내지 않는다.
+function recordResolveIfRecipe(tabId, info) {
+  if (getRecipeSession(tabId)) recordResolve(tabId, info);
+}
+
 async function resolveProcedure(session, provider, goalText) {
   let sigRes;
   try {
     sigRes = await captureSignature(session.tabId);
   } catch (err) {
     console.warn("[setup-copilot] captureSignature 실패", err?.message);
+    recordResolveIfRecipe(session.tabId, { blockedCause: "capture_failed" });
     session.status = "blocked";
     session.recoverText = "화면 구조를 읽지 못했습니다. 페이지가 완전히 로드됐는지 확인하세요.";
     return false;
@@ -531,14 +566,27 @@ async function resolveProcedure(session, provider, goalText) {
   session.structuralHash = hash;
 
   let resolveResult;
+  const resolveStart = Date.now();
   try {
     resolveResult = await resolve(provider, goalText, sig);
   } catch (err) {
     console.warn("[setup-copilot] resolve 실패", err?.message, err?.reasons);
+    recordResolveIfRecipe(session.tabId, {
+      resolverMs: Date.now() - resolveStart,
+      attempts: err?.attempts ?? [],
+      blockedCause: blockedCauseFor(err),
+    });
     session.status = "blocked";
     session.recoverText = `안내를 만들지 못했습니다: ${err?.message ?? "알 수 없는 오류"}. 잠시 후 다시 시도하거나 수동으로 진행하세요.`;
     return false;
   }
+
+  recordResolveIfRecipe(session.tabId, {
+    resolverMs: Date.now() - resolveStart,
+    attempts: resolveResult.attempts,
+    procedure: resolveResult.procedure,
+    blockedCause: resolveResult.empty ? "empty" : null,
+  });
 
   if (resolveResult.empty) {
     session.status = "blocked";
@@ -857,6 +905,13 @@ async function init() {
   settings = await getSettings();
   recentGoals = await getRecentGoals();
   await restoreRecipeSessions();
+  setRecipeEventListener(onRecipeEvent);
+  try {
+    const open = await chrome.tabs.query({});
+    await markAbandoned(open.map((t) => t.id));
+  } catch (err) {
+    console.warn("[setup-copilot] evallog abandoned 정리 실패:", err?.message);
+  }
   attachWatchers();
   ensurePolling();
   await refreshContext();

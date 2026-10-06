@@ -79,7 +79,59 @@
           </div>
         </form>
       </section>
+
+      <section id="checksheet" class="cs-section">
+        <div class="section-header">
+          <h2 class="section-title">관찰 체크시트 (Stage A)</h2>
+          <button id="cs-refresh" class="btn-ghost" type="button">새로고침</button>
+        </div>
+        <p class="options-lede">
+          관찰자 전용입니다. 규칙은 <code>docs/observation-checklist.md</code>를 따릅니다. 기록은 이 브라우저에만 저장됩니다.
+        </p>
+
+        <form id="cs-config" class="provider-form" autocomplete="off">
+          <div class="cs-row">
+            <label class="field">
+              <span class="field-label">참가자 구분</span>
+              <select name="tester">
+                <option value="nondev">nondev (비개발자)</option>
+                <option value="dev">dev (개발자)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">참가자 ID</span>
+              <input type="text" name="participantId" placeholder="dev 또는 P1~P99" spellcheck="false" />
+            </label>
+            <label class="field">
+              <span class="field-label">evalRound</span>
+              <input type="number" name="evalRound" min="1" step="1" />
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">설정 저장</button>
+            <span id="cs-config-status" class="field-hint" role="status"></span>
+          </div>
+          <span class="field-hint">
+            새로 시작하는 run부터 적용됩니다. 시작한 뒤에는 바꾸지 않습니다(바꿔야 하면 새 evalRound).
+          </span>
+        </form>
+
+        <p id="cs-stale" class="card-status" data-tone="error" hidden>새 기록이 있습니다. 입력을 마친 뒤 새로고침하세요.</p>
+        <div id="cs-health" class="field-hint" role="status"></div>
+        <h3 class="cs-subtitle">참가자 요약</h3>
+        <ul id="cs-summary" class="cs-summary" role="list"></ul>
+        <h3 class="cs-subtitle">run 목록</h3>
+        <p id="cs-empty" class="empty-state" hidden>아직 기록된 run이 없습니다.</p>
+        <ul id="cs-runs" class="cs-runs" role="list"></ul>
+
+        <div class="cs-export">
+          <button id="cs-export" class="btn-primary" type="button">JSON 내보내기</button>
+          <button id="cs-clear" class="btn-danger" type="button">평가 기록 삭제</button>
+          <span id="cs-export-status" class="field-hint" role="status"></span>
+        </div>
+      </section>
     </main>
     <script type="module" src="options.js"></script>
+    <script type="module" src="checksheet.js"></script>
   </body>
 </html>
